@@ -6,7 +6,7 @@ import './styles.css'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/ClassMate_AI/sw.js')
+    navigator.serviceWorker.register('/ClassMate_AI/sw.js').catch(() => undefined)
   })
 }
 

@@ -21,10 +21,16 @@ export default function AuthGate() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
-  useEffect(() => onAuthStateChanged(auth, (nextUser) => {
-    setUser(nextUser)
-    setChecking(false)
-  }), [])
+  useEffect(() => {
+    if (!auth) {
+      setChecking(false)
+      return undefined
+    }
+    return onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser)
+      setChecking(false)
+    })
+  }, [])
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -35,6 +41,10 @@ export default function AuthGate() {
     const password = String(data.get('password') ?? '')
 
     try {
+      if (!auth) {
+        setError('La autenticacion no esta configurada todavia.')
+        return
+      }
       if (resetMode) {
         await resetPassword(email)
         setMessage('Te hemos enviado un enlace para recuperar tu contrasena.')

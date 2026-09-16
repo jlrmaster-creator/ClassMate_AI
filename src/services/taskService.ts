@@ -34,8 +34,14 @@ const starterTasks: Task[] = [
 
 export function getTasks(): Task[] {
   const storedTasks = localStorage.getItem(STORAGE_KEY)
-  const tasks = storedTasks ? JSON.parse(storedTasks) as Partial<Task>[] : starterTasks
-  return tasks.map((task) => ({ ...task, importance: task.importance ?? 'normal' })) as Task[]
+  if (!storedTasks) return starterTasks
+  try {
+    const tasks = JSON.parse(storedTasks) as Partial<Task>[]
+    return tasks.map((task) => ({ ...task, importance: task.importance ?? 'normal' })) as Task[]
+  } catch {
+    localStorage.removeItem(STORAGE_KEY)
+    return starterTasks
+  }
 }
 
 export function saveTasks(tasks: Task[]): void {

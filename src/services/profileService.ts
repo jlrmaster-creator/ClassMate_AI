@@ -11,7 +11,13 @@ const emptyProfile: UserProfile = {
 
 export function getProfile(): UserProfile {
   const storedProfile = localStorage.getItem(STORAGE_KEY)
-  return storedProfile ? { ...emptyProfile, ...JSON.parse(storedProfile) as Partial<UserProfile> } : emptyProfile
+  if (!storedProfile) return emptyProfile
+  try {
+    return { ...emptyProfile, ...JSON.parse(storedProfile) as Partial<UserProfile> }
+  } catch {
+    localStorage.removeItem(STORAGE_KEY)
+    return emptyProfile
+  }
 }
 
 export function saveProfile(profile: UserProfile): void {

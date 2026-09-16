@@ -4,7 +4,13 @@ const STORAGE_KEY = 'classmate-projects'
 
 export function getProjects(): Project[] {
   const storedProjects = localStorage.getItem(STORAGE_KEY)
-  return storedProjects ? JSON.parse(storedProjects) as Project[] : []
+  if (!storedProjects) return []
+  try {
+    return JSON.parse(storedProjects) as Project[]
+  } catch {
+    localStorage.removeItem(STORAGE_KEY)
+    return []
+  }
 }
 
 export function saveProjects(projects: Project[]): void {

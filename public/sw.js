@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classmate-shell-v2'
+const CACHE_NAME = 'classmate-shell-v3'
 const APP_SHELL = '/ClassMate_AI/'
 
 self.addEventListener('install', (event) => {
