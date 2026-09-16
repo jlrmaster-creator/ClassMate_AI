@@ -1,0 +1,118 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validTimestamp(value) {
+      return value is timestamp;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.id == userId
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+      allow update: if isOwner(userId)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if isOwner(userId);
+
+      match /subjects/{subjectId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.userId == userId
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && validTimestamp(request.resource.data.createdAt)
+          && validTimestamp(request.resource.data.updatedAt);
+        allow update: if isOwner(userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validTimestamp(request.resource.data.updatedAt);
+        allow delete: if isOwner(userId);
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.userId == userId
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.status in ['pending', 'in_progress', 'completed']
+          && request.resource.data.priority in ['low', 'medium', 'high']
+          && validTimestamp(request.resource.data.createdAt)
+          && validTimestamp(request.resource.data.updatedAt);
+        allow update: if isOwner(userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validTimestamp(request.resource.data.updatedAt);
+        allow delete: if isOwner(userId);
+      }
+
+      match /projects/{projectId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.userId == userId
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 200
+          && validTimestamp(request.resource.data.createdAt)
+          && validTimestamp(request.resource.data.updatedAt);
+        allow update: if isOwner(userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validTimestamp(request.resource.data.updatedAt);
+        allow delete: if isOwner(userId);
+
+        match /subtasks/{subtaskId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId)
+            && request.resource.data.userId == userId
+            && request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 200
+            && validTimestamp(request.resource.data.createdAt)
+            && validTimestamp(request.resource.data.updatedAt);
+          allow update: if isOwner(userId)
+            && request.resource.data.userId == resource.data.userId
+            && request.resource.data.createdAt == resource.data.createdAt
+            && validTimestamp(request.resource.data.updatedAt);
+          allow delete: if isOwner(userId);
+        }
+      }
+
+      match /studySessions/{sessionId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.userId == userId
+          && validTimestamp(request.resource.data.createdAt)
+          && validTimestamp(request.resource.data.updatedAt);
+        allow update: if isOwner(userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validTimestamp(request.resource.data.updatedAt);
+      }
+
+      match /notifications/{notificationId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.userId == userId;
+      }
+
+      match /settings/{settingsId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
