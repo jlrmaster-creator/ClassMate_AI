@@ -5,6 +5,11 @@
   "start_url": "/ClassMate_AI/",
   "scope": "/ClassMate_AI/",
   "display": "standalone",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/ClassMate_AI/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "/ClassMate_AI/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
   "background_color": "#f4f5f0",
   "theme_color": "#397a60",
   "lang": "es"

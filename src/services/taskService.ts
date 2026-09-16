@@ -9,6 +9,7 @@ const starterTasks: Task[] = [
     title: 'Ejercicios 12-25',
     estimatedMinutes: 35,
     priority: 'high',
+    importance: 'essential',
     status: 'pending',
   },
   {
@@ -17,6 +18,7 @@ const starterTasks: Task[] = [
     title: 'Buscar dos fuentes',
     estimatedMinutes: 20,
     priority: 'medium',
+    importance: 'important',
     status: 'pending',
   },
   {
@@ -25,13 +27,15 @@ const starterTasks: Task[] = [
     title: 'Repasar vocabulario',
     estimatedMinutes: 15,
     priority: 'low',
+    importance: 'normal',
     status: 'pending',
   },
 ]
 
 export function getTasks(): Task[] {
   const storedTasks = localStorage.getItem(STORAGE_KEY)
-  return storedTasks ? JSON.parse(storedTasks) as Task[] : starterTasks
+  const tasks = storedTasks ? JSON.parse(storedTasks) as Partial<Task>[] : starterTasks
+  return tasks.map((task) => ({ ...task, importance: task.importance ?? 'normal' })) as Task[]
 }
 
 export function saveTasks(tasks: Task[]): void {

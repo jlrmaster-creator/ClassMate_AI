@@ -22,7 +22,7 @@ import ProjectsView from './features/projects/ProjectsView'
 import { getProfile, saveProfile } from './services/profileService'
 import { getProjects, saveProjects } from './services/projectService'
 import type { Project } from './types/project'
-import type { Task, TaskPriority } from './types/task'
+import type { Task, TaskImportance, TaskPriority } from './types/task'
 import type { UserProfile } from './types/userProfile'
 
 const priorityLabels: Record<TaskPriority, string> = {
@@ -35,6 +35,17 @@ const priorityColors: Record<TaskPriority, string> = {
   high: 'priority-high',
   medium: 'priority-medium',
   low: 'priority-low',
+}
+
+const importanceLabels: Record<TaskImportance, string> = {
+  essential: 'Esencial',
+  important: 'Importante',
+  normal: 'Normal',
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  return `${(minutes / 60).toString().replace('.', ',')} h`
 }
 
 interface AppProps {
@@ -54,6 +65,16 @@ function App({ onLogout }: AppProps) {
   const completedTasks = tasks.filter((task) => task.status === 'completed')
   const completedCount = tasks.length - pendingTasks.length
   const totalMinutes = pendingTasks.reduce((total, task) => total + task.estimatedMinutes, 0)
+  const recommendedTasks = pendingTasks
+    .filter((task) => task.estimatedMinutes <= (selectedMinutes ?? Number.MAX_SAFE_INTEGER))
+    .sort((first, second) => taskScore(second) - taskScore(first))
+
+  function taskScore(task: Task): number {
+    const priorityScore = { high: 30, medium: 20, low: 10 }[task.priority]
+    const importanceScore = { essential: 30, important: 20, normal: 10 }[task.importance]
+    const shortTaskBonus = task.estimatedMinutes <= (selectedMinutes ?? 30) ? 5 : 0
+    return priorityScore + importanceScore + shortTaskBonus
+  }
 
   function toggleTask(taskId: string) {
     const nextTasks: Task[] = tasks.map((task) =>
@@ -80,7 +101,8 @@ function App({ onLogout }: AppProps) {
         title,
         subject,
         estimatedMinutes: minutes,
-        priority: 'medium' as const,
+        priority: String(formData.get('priority') ?? 'medium') as TaskPriority,
+        importance: String(formData.get('importance') ?? 'normal') as TaskImportance,
         status: 'pending' as const,
       },
     ]
@@ -122,7 +144,7 @@ function App({ onLogout }: AppProps) {
           {isCompleted && <Check size={16} />}
         </button>
         <div className="task-body">
-          <span className="task-priority">{isCompleted ? 'Completada' : priorityLabels[task.priority]}</span>
+          <span className="task-priority">{isCompleted ? 'Completada' : `${priorityLabels[task.priority]} · ${importanceLabels[task.importance]}`}</span>
           <p className="task-subject">{task.subject}</p>
           <h3>{task.title}</h3>
           <span className="task-time"><Clock3 size={14} /> {task.estimatedMinutes} min</span>
@@ -234,8 +256,8 @@ function App({ onLogout }: AppProps) {
           <p className="section-kicker">Plan rapido</p>
           <h2>Cuanto tiempo tienes?</h2>
           <p className="muted-copy">Te propondremos una combinacion realista.</p>
-          <div className="minutes-grid">{[15, 30, 45, 60].map((minutes) => <button className={selectedMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => setSelectedMinutes(minutes)}>{minutes === 60 ? '1 hora' : `${minutes} min`}</button>)}</div>
-          {selectedMinutes && <div className="plan-result"><strong>Tu plan de {selectedMinutes} minutos</strong><span>Empieza con {pendingTasks[0]?.title ?? 'tu siguiente tarea'}.</span><button onClick={() => setShowMinutes(false)}>Empezar plan <ArrowRight size={16} /></button></div>}
+          <div className="minutes-grid">{[15, 30, 45, 60, 90, 120, 150, 180].map((minutes) => <button className={selectedMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => setSelectedMinutes(minutes)}>{formatDuration(minutes)}</button>)}</div>
+          {selectedMinutes && <div className="plan-result"><strong>Tu plan de {formatDuration(selectedMinutes)}</strong><span>{recommendedTasks[0] ? `Te recomendamos empezar por ${recommendedTasks[0].title}.` : 'No hay una tarea que encaje en ese tiempo.'}</span>{recommendedTasks.length > 0 && <small>Prioridad: {importanceLabels[recommendedTasks[0].importance].toLowerCase()} · {priorityLabels[recommendedTasks[0].priority].toLowerCase()}</small>}<button onClick={() => setShowMinutes(false)}>Empezar plan <ArrowRight size={16} /></button></div>}
         </section>
       </div>}
 
@@ -245,6 +267,8 @@ function App({ onLogout }: AppProps) {
           <p className="section-kicker">Nueva tarea</p><h2>Vamos a apuntarla</h2>
           <label>Que tienes que hacer?<input name="title" placeholder="Ej. Leer el capitulo 4" required autoFocus /></label>
           <label>Asignatura<input name="subject" placeholder="Ej. Historia" required /></label>
+          <label>Importancia<select name="importance" defaultValue="normal"><option value="essential">Esencial</option><option value="important">Importante</option><option value="normal">Normal</option></select></label>
+          <label>Prioridad<select name="priority" defaultValue="medium"><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></select></label>
           <label>Tiempo estimado<select name="minutes" defaultValue="30"><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">1 hora</option></select></label>
           <button className="primary-button" type="submit">Guardar tarea <ArrowRight size={17} /></button>
         </form>

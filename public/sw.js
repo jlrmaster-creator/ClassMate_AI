@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classmate-shell-v1'
+const CACHE_NAME = 'classmate-shell-v2'
 const APP_SHELL = '/ClassMate_AI/'
 
 self.addEventListener('install', (event) => {
@@ -7,12 +7,17 @@ self.addEventListener('install', (event) => {
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim())
+  event.waitUntil(
+    caches.keys().then((cacheNames) => Promise.all(
+      cacheNames.filter((cacheName) => cacheName !== CACHE_NAME).map((cacheName) => caches.delete(cacheName)),
+    )).then(() => self.clients.claim()),
+  )
 })
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => cachedResponse ?? fetch(event.request)),
-  )
+  event.respondWith(caches.match(event.request).then((cachedResponse) => {
+    if (cachedResponse) return cachedResponse
+    return fetch(event.request).catch(() => caches.match(APP_SHELL))
+  }))
 })
