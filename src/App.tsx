@@ -7,11 +7,14 @@ import {
   ChevronDown,
   CirclePlus,
   Clock3,
+  CalendarDays,
+  Edit3,
   FolderKanban,
   Home,
   ListChecks,
   LogOut,
   Plus,
+  Share2,
   Sparkles,
   UserRound,
   X,
@@ -19,6 +22,7 @@ import {
 import { getTasks, saveTasks } from './services/taskService'
 import ProfileView from './features/profile/ProfileView'
 import ProjectsView from './features/projects/ProjectsView'
+import CalendarView from './features/calendar/CalendarView'
 import { getProfile, saveProfile } from './services/profileService'
 import { getProjects, saveProjects } from './services/projectService'
 import type { Project } from './types/project'
@@ -55,11 +59,20 @@ interface AppProps {
 function App({ onLogout }: AppProps) {
   const [tasks, setTasks] = useState<Task[]>(getTasks)
   const [showMinutes, setShowMinutes] = useState(false)
-  const [selectedMinutes, setSelectedMinutes] = useState<number | null>(null)
+  const [selectedMinutes, setSelectedMinutes] = useState<number | null>(() => {
+    const storedMinutes = localStorage.getItem('classmate-planner-minutes')
+    return storedMinutes ? Number(storedMinutes) : null
+  })
   const [showTaskForm, setShowTaskForm] = useState(false)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [newTaskDueDate, setNewTaskDueDate] = useState('')
   const [activeTab, setActiveTab] = useState('Hoy')
   const [profile, setProfile] = useState<UserProfile>(getProfile)
   const [projects, setProjects] = useState<Project[]>(getProjects)
+  const [schoolDays, setSchoolDays] = useState<number[]>(() => {
+    const storedDays = localStorage.getItem('classmate-school-days')
+    return storedDays ? JSON.parse(storedDays) as number[] : [0, 1, 2, 3, 4]
+  })
 
   const pendingTasks = tasks.filter((task) => task.status === 'pending')
   const completedTasks = tasks.filter((task) => task.status === 'completed')
@@ -86,7 +99,7 @@ function App({ onLogout }: AppProps) {
     saveTasks(nextTasks)
   }
 
-  function addTask(event: React.FormEvent<HTMLFormElement>) {
+  function saveTask(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const title = String(formData.get('title') ?? '').trim()
@@ -94,27 +107,60 @@ function App({ onLogout }: AppProps) {
     const minutes = Number(formData.get('minutes') ?? 30)
     if (!title || !subject || !minutes) return
 
-    const nextTasks = [
-      ...tasks,
-      {
-        id: crypto.randomUUID(),
-        title,
-        subject,
-        estimatedMinutes: minutes,
-        priority: String(formData.get('priority') ?? 'medium') as TaskPriority,
-        importance: String(formData.get('importance') ?? 'normal') as TaskImportance,
-        status: 'pending' as const,
-      },
-    ]
+    const task: Task = {
+      id: editingTask?.id ?? crypto.randomUUID(),
+      title,
+      subject,
+      dueDate: String(formData.get('dueDate') ?? ''),
+      estimatedMinutes: minutes,
+      priority: String(formData.get('priority') ?? 'medium') as TaskPriority,
+      importance: String(formData.get('importance') ?? 'normal') as TaskImportance,
+      status: editingTask?.status ?? 'pending',
+    }
+    const nextTasks = editingTask
+      ? tasks.map((item) => item.id === editingTask.id ? task : item)
+      : [...tasks, task]
     setTasks(nextTasks)
     saveTasks(nextTasks)
     setShowTaskForm(false)
+    setEditingTask(null)
+  }
+
+  function openNewTask() {
+    setEditingTask(null)
+    setNewTaskDueDate('')
+    setShowTaskForm(true)
+  }
+
+  function openTaskForDate(date: string) {
+    setEditingTask(null)
+    setNewTaskDueDate(date)
+    setShowTaskForm(true)
+  }
+
+  function openEditTask(task: Task) {
+    setEditingTask(task)
+    setShowTaskForm(true)
   }
 
   function deleteTask(taskId: string) {
     const nextTasks = tasks.filter((task) => task.id !== taskId)
     setTasks(nextTasks)
     saveTasks(nextTasks)
+  }
+
+  function shareTask(task: Task) {
+    const dueDate = task.dueDate
+      ? new Date(`${task.dueDate}T12:00:00`).toLocaleDateString('es-ES')
+      : 'sin fecha asignada'
+    const text = [
+      `Tarea: ${task.title}`,
+      `Asignatura: ${task.subject}`,
+      `Tiempo estimado: ${formatDuration(task.estimatedMinutes)}`,
+      `Entrega: ${dueDate}`,
+      `Prioridad: ${priorityLabels[task.priority]}`,
+    ].join('\n')
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer')
   }
 
   function updateProfile(nextProfile: UserProfile) {
@@ -136,7 +182,12 @@ function App({ onLogout }: AppProps) {
     saveProjects(nextProjects)
   }
 
-  function renderTask(task: Task, showDelete = false) {
+  function updateSchoolDays(days: number[]) {
+    setSchoolDays(days)
+    localStorage.setItem('classmate-school-days', JSON.stringify(days))
+  }
+
+  function renderTask(task: Task, showActions = false) {
     const isCompleted = task.status === 'completed'
     return (
       <article className={`task-item ${priorityColors[task.priority]} ${isCompleted ? 'task-completed' : ''}`} key={task.id}>
@@ -149,8 +200,7 @@ function App({ onLogout }: AppProps) {
           <h3>{task.title}</h3>
           <span className="task-time"><Clock3 size={14} /> {task.estimatedMinutes} min</span>
         </div>
-        {showDelete && <button className="task-delete" onClick={() => deleteTask(task.id)} aria-label={`Eliminar ${task.title}`}><X size={16} /></button>}
-        {!showDelete && <ChevronDown size={18} className="task-chevron" />}
+        {showActions ? <span className="task-actions"><button className="task-share" onClick={() => shareTask(task)} aria-label={`Compartir ${task.title} por WhatsApp`}><Share2 size={16} /></button><button className="task-edit" onClick={() => openEditTask(task)} aria-label={`Editar ${task.title}`}><Edit3 size={16} /></button><button className="task-delete" onClick={() => deleteTask(task.id)} aria-label={`Eliminar ${task.title}`}><X size={16} /></button></span> : <ChevronDown size={18} className="task-chevron" />}
       </article>
     )
   }
@@ -166,7 +216,7 @@ function App({ onLogout }: AppProps) {
       </header>
 
       <main className="content">
-        {activeTab === 'Perfil' ? <ProfileView profile={profile} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : <>
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">Miercoles, 16 de septiembre</p>
@@ -210,23 +260,23 @@ function App({ onLogout }: AppProps) {
         </section>
 
         <div className="task-list">
-          {pendingTasks.map((task) => renderTask(task))}
+          {pendingTasks.map((task) => renderTask(task, true))}
           {completedCount > 0 && <p className="completed-note"><Check size={15} /> {completedCount} tarea{completedCount === 1 ? '' : 's'} completada{completedCount === 1 ? '' : 's'}</p>}
           {pendingTasks.length === 0 && <div className="empty-state"><span><Check size={24} /></span><h3>Estas al dia</h3><p>Parece que no tienes tareas pendientes.</p></div>}
         </div>
 
         <button className="minutes-button" onClick={() => setShowMinutes(true)}>
           <Clock3 size={20} />
-          <span>Tengo X minutos</span>
+          <span>{selectedMinutes ? `Tengo ${formatDuration(selectedMinutes)}` : 'Tengo X minutos'}</span>
           <ArrowRight size={18} />
         </button>
 
         <section className="quick-add">
           <div><span className="section-kicker">Anade sin complicarte</span><h2>Que tienes que hacer?</h2></div>
-          <button className="add-task-button" onClick={() => setShowTaskForm(true)} aria-label="Anadir tarea"><Plus size={22} /></button>
+          <button className="add-task-button" onClick={openNewTask} aria-label="Anadir tarea"><Plus size={22} /></button>
         </section>
         <div className="input-options">
-          <button onClick={() => setShowTaskForm(true)}><ListChecks size={18} /> Escribir</button>
+          <button onClick={openNewTask}><ListChecks size={18} /> Escribir</button>
           <button disabled><span>◌</span> Hablar</button>
           <button disabled><BookOpen size={18} /> Foto</button>
           <button disabled><FolderKanban size={18} /> Documento</button>
@@ -240,10 +290,11 @@ function App({ onLogout }: AppProps) {
           { label: 'Hoy', icon: Home },
           { label: 'Tareas', icon: ListChecks },
           { label: 'Proyectos', icon: FolderKanban },
+          { label: 'Calendario', icon: CalendarDays },
           { label: 'Anadir', icon: CirclePlus },
           { label: 'Perfil', icon: UserRound },
         ].map(({ label, icon: Icon }) => (
-          <button className={activeTab === label ? 'nav-item active' : 'nav-item'} key={label} onClick={() => label === 'Anadir' ? setShowTaskForm(true) : setActiveTab(label)}>
+          <button className={activeTab === label ? 'nav-item active' : 'nav-item'} key={label} onClick={() => label === 'Anadir' ? openNewTask() : setActiveTab(label)}>
             <Icon size={20} /><span>{label}</span>
           </button>
         ))}
@@ -256,20 +307,22 @@ function App({ onLogout }: AppProps) {
           <p className="section-kicker">Plan rapido</p>
           <h2>Cuanto tiempo tienes?</h2>
           <p className="muted-copy">Te propondremos una combinacion realista.</p>
-          <div className="minutes-grid">{[15, 30, 45, 60, 90, 120, 150, 180].map((minutes) => <button className={selectedMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => setSelectedMinutes(minutes)}>{formatDuration(minutes)}</button>)}</div>
+          <div className="minutes-grid">{[15, 30, 45, 60, 90, 120, 150, 180].map((minutes) => <button className={selectedMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => { setSelectedMinutes(minutes); localStorage.setItem('classmate-planner-minutes', String(minutes)) }}>{formatDuration(minutes)}</button>)}</div>
+          {selectedMinutes && <p className="selected-time"><Clock3 size={15} /> Tiempo elegido: <strong>{formatDuration(selectedMinutes)}</strong></p>}
           {selectedMinutes && <div className="plan-result"><strong>Tu plan de {formatDuration(selectedMinutes)}</strong><span>{recommendedTasks[0] ? `Te recomendamos empezar por ${recommendedTasks[0].title}.` : 'No hay una tarea que encaje en ese tiempo.'}</span>{recommendedTasks.length > 0 && <small>Prioridad: {importanceLabels[recommendedTasks[0].importance].toLowerCase()} · {priorityLabels[recommendedTasks[0].priority].toLowerCase()}</small>}<button onClick={() => setShowMinutes(false)}>Empezar plan <ArrowRight size={16} /></button></div>}
         </section>
       </div>}
 
-      {showTaskForm && <div className="modal-backdrop" onClick={() => setShowTaskForm(false)}>
-        <form className="modal task-form" onSubmit={addTask} onClick={(event) => event.stopPropagation()}>
-          <button type="button" className="modal-close" onClick={() => setShowTaskForm(false)} aria-label="Cerrar"><X size={19} /></button>
-          <p className="section-kicker">Nueva tarea</p><h2>Vamos a apuntarla</h2>
-          <label>Que tienes que hacer?<input name="title" placeholder="Ej. Leer el capitulo 4" required autoFocus /></label>
-          <label>Asignatura<input name="subject" placeholder="Ej. Historia" required /></label>
-          <label>Importancia<select name="importance" defaultValue="normal"><option value="essential">Esencial</option><option value="important">Importante</option><option value="normal">Normal</option></select></label>
-          <label>Prioridad<select name="priority" defaultValue="medium"><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></select></label>
-          <label>Tiempo estimado<select name="minutes" defaultValue="30"><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">1 hora</option></select></label>
+      {showTaskForm && <div className="modal-backdrop" onClick={() => { setShowTaskForm(false); setEditingTask(null) }}>
+        <form className="modal task-form" onSubmit={saveTask} onClick={(event) => event.stopPropagation()}>
+          <button type="button" className="modal-close" onClick={() => { setShowTaskForm(false); setEditingTask(null) }} aria-label="Cerrar"><X size={19} /></button>
+          <p className="section-kicker">{editingTask ? 'Editar tarea' : 'Nueva tarea'}</p><h2>{editingTask ? 'Actualiza tu tarea' : 'Vamos a apuntarla'}</h2>
+          <label>Que tienes que hacer?<input name="title" defaultValue={editingTask?.title} placeholder="Ej. Leer el capitulo 4" required autoFocus /></label>
+          <label>Asignatura<input name="subject" defaultValue={editingTask?.subject} placeholder="Ej. Historia" required /></label>
+          <label>Importancia<select name="importance" defaultValue={editingTask?.importance ?? 'normal'}><option value="essential">Esencial</option><option value="important">Importante</option><option value="normal">Normal</option></select></label>
+          <label>Prioridad<select name="priority" defaultValue={editingTask?.priority ?? 'medium'}><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></select></label>
+          <label>Tiempo estimado<select name="minutes" defaultValue={String(editingTask?.estimatedMinutes ?? 30)}><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">1 hora</option><option value="90">1,5 horas</option><option value="120">2 horas</option><option value="150">2,5 horas</option><option value="180">3 horas</option></select></label>
+          <label>Fecha de entrega<input name="dueDate" type="date" defaultValue={editingTask?.dueDate ?? newTaskDueDate} /></label>
           <button className="primary-button" type="submit">Guardar tarea <ArrowRight size={17} /></button>
         </form>
       </div>}

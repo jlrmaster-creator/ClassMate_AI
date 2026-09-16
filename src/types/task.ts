@@ -6,6 +6,7 @@ export interface Task {
   id: string
   subject: string
   title: string
+  dueDate?: string
   estimatedMinutes: number
   priority: TaskPriority
   importance: TaskImportance

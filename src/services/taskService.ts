@@ -10,6 +10,7 @@ const starterTasks: Task[] = [
     estimatedMinutes: 35,
     priority: 'high',
     importance: 'essential',
+    dueDate: '2026-09-18',
     status: 'pending',
   },
   {
@@ -19,6 +20,7 @@ const starterTasks: Task[] = [
     estimatedMinutes: 20,
     priority: 'medium',
     importance: 'important',
+    dueDate: '2026-09-19',
     status: 'pending',
   },
   {
@@ -28,6 +30,7 @@ const starterTasks: Task[] = [
     estimatedMinutes: 15,
     priority: 'low',
     importance: 'normal',
+    dueDate: '2026-09-21',
     status: 'pending',
   },
 ]
