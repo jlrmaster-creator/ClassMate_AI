@@ -4,6 +4,12 @@ import './firebase/config'
 import AuthGate from './features/auth/AuthGate'
 import './styles.css'
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/ClassMate_AI/sw.js')
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthGate />

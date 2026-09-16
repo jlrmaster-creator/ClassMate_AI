@@ -1,0 +1,11 @@
+{
+  "name": "ClassMate AI",
+  "short_name": "ClassMate",
+  "description": "Tu asistente personal de estudios",
+  "start_url": "/ClassMate_AI/",
+  "scope": "/ClassMate_AI/",
+  "display": "standalone",
+  "background_color": "#f4f5f0",
+  "theme_color": "#397a60",
+  "lang": "es"
+}
