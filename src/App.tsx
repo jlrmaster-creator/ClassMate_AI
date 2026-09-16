@@ -17,7 +17,13 @@ import {
   X,
 } from 'lucide-react'
 import { getTasks, saveTasks } from './services/taskService'
+import ProfileView from './features/profile/ProfileView'
+import ProjectsView from './features/projects/ProjectsView'
+import { getProfile, saveProfile } from './services/profileService'
+import { getProjects, saveProjects } from './services/projectService'
+import type { Project } from './types/project'
 import type { Task, TaskPriority } from './types/task'
+import type { UserProfile } from './types/userProfile'
 
 const priorityLabels: Record<TaskPriority, string> = {
   high: 'Prioridad',
@@ -41,8 +47,11 @@ function App({ onLogout }: AppProps) {
   const [selectedMinutes, setSelectedMinutes] = useState<number | null>(null)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [activeTab, setActiveTab] = useState('Hoy')
+  const [profile, setProfile] = useState<UserProfile>(getProfile)
+  const [projects, setProjects] = useState<Project[]>(getProjects)
 
   const pendingTasks = tasks.filter((task) => task.status === 'pending')
+  const completedTasks = tasks.filter((task) => task.status === 'completed')
   const completedCount = tasks.length - pendingTasks.length
   const totalMinutes = pendingTasks.reduce((total, task) => total + task.estimatedMinutes, 0)
 
@@ -80,6 +89,50 @@ function App({ onLogout }: AppProps) {
     setShowTaskForm(false)
   }
 
+  function deleteTask(taskId: string) {
+    const nextTasks = tasks.filter((task) => task.id !== taskId)
+    setTasks(nextTasks)
+    saveTasks(nextTasks)
+  }
+
+  function updateProfile(nextProfile: UserProfile) {
+    setProfile(nextProfile)
+    saveProfile(nextProfile)
+  }
+
+  function saveProject(project: Project) {
+    const nextProjects = projects.some((item) => item.id === project.id)
+      ? projects.map((item) => item.id === project.id ? project : item)
+      : [...projects, project]
+    setProjects(nextProjects)
+    saveProjects(nextProjects)
+  }
+
+  function deleteProject(projectId: string) {
+    const nextProjects = projects.filter((project) => project.id !== projectId)
+    setProjects(nextProjects)
+    saveProjects(nextProjects)
+  }
+
+  function renderTask(task: Task, showDelete = false) {
+    const isCompleted = task.status === 'completed'
+    return (
+      <article className={`task-item ${priorityColors[task.priority]} ${isCompleted ? 'task-completed' : ''}`} key={task.id}>
+        <button className="task-check" onClick={() => toggleTask(task.id)} aria-label={`${isCompleted ? 'Reabrir' : 'Completar'} ${task.title}`}>
+          {isCompleted && <Check size={16} />}
+        </button>
+        <div className="task-body">
+          <span className="task-priority">{isCompleted ? 'Completada' : priorityLabels[task.priority]}</span>
+          <p className="task-subject">{task.subject}</p>
+          <h3>{task.title}</h3>
+          <span className="task-time"><Clock3 size={14} /> {task.estimatedMinutes} min</span>
+        </div>
+        {showDelete && <button className="task-delete" onClick={() => deleteTask(task.id)} aria-label={`Eliminar ${task.title}`}><X size={16} /></button>}
+        {!showDelete && <ChevronDown size={18} className="task-chevron" />}
+      </article>
+    )
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -91,10 +144,11 @@ function App({ onLogout }: AppProps) {
       </header>
 
       <main className="content">
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">Miercoles, 16 de septiembre</p>
-            <h1>Buenos dias, Alex <span aria-hidden="true">👋</span></h1>
+            <h1>Buenos dias{profile.nick ? `, ${profile.nick}` : ''} <span aria-hidden="true">👋</span></h1>
             <p className="muted-copy">
               {pendingTasks.length > 0 ? `Tienes ${pendingTasks.length} cosas bajo control hoy.` : 'Estas al dia. Buen trabajo.'}
             </p>
@@ -114,6 +168,17 @@ function App({ onLogout }: AppProps) {
           <ArrowRight size={19} className="focus-arrow" />
         </section>
 
+        {activeTab === 'Tareas' ? <section className="tasks-view">
+          <section className="section-heading">
+            <div><p className="section-kicker">Tu lista completa</p><h2>Todas tus tareas</h2></div>
+            <span className="time-total">{tasks.length} en total</span>
+          </section>
+          <div className="task-list">
+            {tasks.map((task) => renderTask(task, true))}
+            {tasks.length === 0 && <div className="empty-state"><span><ListChecks size={24} /></span><h3>No tienes tareas</h3><p>Añade una para empezar a organizarte.</p></div>}
+          </div>
+          {tasks.length > 0 && <p className="tasks-retention"><Check size={15} /> Las tareas completadas seguirán aquí hasta que las elimines.</p>}
+        </section> : <>
         <section className="section-heading">
           <div>
             <p className="section-kicker">Plan de hoy</p>
@@ -123,20 +188,7 @@ function App({ onLogout }: AppProps) {
         </section>
 
         <div className="task-list">
-          {pendingTasks.map((task) => (
-            <article className={`task-item ${priorityColors[task.priority]}`} key={task.id}>
-              <button className="task-check" onClick={() => toggleTask(task.id)} aria-label={`Completar ${task.title}`}>
-                <Check size={16} />
-              </button>
-              <div className="task-body">
-                <span className="task-priority">{priorityLabels[task.priority]}</span>
-                <p className="task-subject">{task.subject}</p>
-                <h3>{task.title}</h3>
-                <span className="task-time"><Clock3 size={14} /> {task.estimatedMinutes} min</span>
-              </div>
-              <ChevronDown size={18} className="task-chevron" />
-            </article>
-          ))}
+          {pendingTasks.map((task) => renderTask(task))}
           {completedCount > 0 && <p className="completed-note"><Check size={15} /> {completedCount} tarea{completedCount === 1 ? '' : 's'} completada{completedCount === 1 ? '' : 's'}</p>}
           {pendingTasks.length === 0 && <div className="empty-state"><span><Check size={24} /></span><h3>Estas al dia</h3><p>Parece que no tienes tareas pendientes.</p></div>}
         </div>
@@ -157,6 +209,8 @@ function App({ onLogout }: AppProps) {
           <button disabled><BookOpen size={18} /> Foto</button>
           <button disabled><FolderKanban size={18} /> Documento</button>
         </div>
+        </>}
+        </>}
       </main>
 
       <nav className="bottom-nav" aria-label="Navegacion principal">
