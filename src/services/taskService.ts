@@ -1,47 +1,67 @@
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  type Unsubscribe,
+} from 'firebase/firestore'
+import { db } from '../firebase/config'
 import type { Task } from '../types/task'
-import { readStorage, removeStorage, writeStorage } from './safeStorage'
 
-const STORAGE_KEY = 'classmate-tasks'
-
-const starterTasks: Task[] = [
-  {
-    id: 'math-12-25',
-    subject: 'Matematicas',
-    title: 'Ejercicios 12-25',
-    estimatedMinutes: 35,
-    priority: 'high',
-    importance: 'essential',
-    dueDate: '2026-09-18',
-    status: 'pending',
-  },
-  {
-    id: 'history-sources',
-    subject: 'Historia',
-    title: 'Buscar dos fuentes',
-    estimatedMinutes: 20,
-    priority: 'medium',
-    importance: 'important',
-    dueDate: '2026-09-19',
-    status: 'pending',
-  },
-  {
-    id: 'english-vocabulary',
-    subject: 'Ingles',
-    title: 'Repasar vocabulario',
-    estimatedMinutes: 15,
-    priority: 'low',
-    importance: 'normal',
-    dueDate: '2026-09-21',
-    status: 'pending',
-  },
-]
-
-export function getTasks(): Task[] {
-  const tasks = readStorage<Partial<Task>[] | null>(STORAGE_KEY, null)
-  if (!tasks) return starterTasks
-  return tasks.map((task) => ({ ...task, importance: task.importance ?? 'normal' })) as Task[]
+function userTasksCollection(userId: string) {
+  if (!db) return null
+  return collection(db, 'users', userId, 'tasks')
 }
 
-export function saveTasks(tasks: Task[]): void {
-  writeStorage(STORAGE_KEY, tasks)
+function taskFromDocument(id: string, data: Record<string, unknown>): Task {
+  return {
+    id,
+    subject: String(data.subject ?? ''),
+    title: String(data.title ?? ''),
+    dueDate: typeof data.dueDate === 'string' ? data.dueDate : undefined,
+    estimatedMinutes: Number(data.estimatedMinutes ?? 30),
+    priority: (data.priority ?? 'medium') as Task['priority'],
+    importance: (data.importance ?? 'normal') as Task['importance'],
+    status: (data.status ?? 'pending') as Task['status'],
+    completedAt: typeof data.completedAt === 'string' ? data.completedAt : undefined,
+  }
+}
+
+export function subscribeToTasks(userId: string, onTasks: (tasks: Task[]) => void): Unsubscribe | null {
+  const tasksCollection = userTasksCollection(userId)
+  if (!tasksCollection) return null
+  return onSnapshot(tasksCollection, (snapshot) => {
+    onTasks(snapshot.docs.map((item) => taskFromDocument(item.id, item.data() as Record<string, unknown>)))
+  })
+}
+
+export async function createCloudTask(userId: string, task: Task): Promise<string | null> {
+  const tasksCollection = userTasksCollection(userId)
+  if (!tasksCollection) return null
+  const { id, ...taskData } = task
+  const taskReference = await addDoc(tasksCollection, {
+    ...taskData,
+    userId,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return taskReference.id
+}
+
+export async function updateCloudTask(userId: string, task: Task): Promise<void> {
+  if (!db) return
+  const { id, ...taskData } = task
+  await setDoc(doc(db, 'users', userId, 'tasks', id), {
+    ...taskData,
+    userId,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+export async function deleteCloudTask(userId: string, taskId: string): Promise<void> {
+  if (!db) return
+  await deleteDoc(doc(db, 'users', userId, 'tasks', taskId))
 }

@@ -19,15 +19,10 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { getTasks, saveTasks } from './services/taskService'
-import ProfileView from './features/profile/ProfileView'
-import ProjectsView from './features/projects/ProjectsView'
-import CalendarView from './features/calendar/CalendarView'
-import { getProfile, saveProfile } from './services/profileService'
-import { getProjects, saveProjects } from './services/projectService'
-import { readStorage, writeStorage } from './services/safeStorage'
-import { getRewardSummary } from './services/rewardService'
-import { createCloudTask, deleteCloudTask, subscribeToTasks, updateCloudTask } from './services/firestoreTaskService'
+import { subscribeToTasks, createCloudTask, updateCloudTask, deleteCloudTask } from './services/taskService'
+import { subscribeToProjects, createCloudProject, updateCloudProject, deleteCloudProject } from './services/projectService'
+import { subscribeToProfile, updateCloudProfile } from './services/profileService'
+import { getRewardSummary, pointsForTask } from './services/rewardService'
 import type { Project } from './types/project'
 import type { Task, TaskImportance, TaskPriority } from './types/task'
 import type { UserProfile } from './types/userProfile'
@@ -61,24 +56,30 @@ interface AppProps {
 }
 
 function App({ userId, onLogout }: AppProps) {
-  const [tasks, setTasks] = useState<Task[]>(getTasks)
+  const [tasks, setTasks] = useState<Task[]>([])
   const [showMinutes, setShowMinutes] = useState(false)
   const [showPomodoro, setShowPomodoro] = useState(false)
   const [pomodoroMinutes, setPomodoroMinutes] = useState(15)
   const [pomodoroRemaining, setPomodoroRemaining] = useState(15 * 60)
   const [pomodoroRunning, setPomodoroRunning] = useState(false)
-  const [selectedMinutes, setSelectedMinutes] = useState<number | null>(() => readStorage<number | null>('classmate-planner-minutes', null))
+  const [selectedMinutes, setSelectedMinutes] = useState<number | null>(() => {
+    const saved = localStorage.getItem('classmate-planner-minutes')
+    return saved ? JSON.parse(saved) : null
+  })
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [newTaskDueDate, setNewTaskDueDate] = useState('')
   const [activeTab, setActiveTab] = useState('Hoy')
-  const [profile, setProfile] = useState<UserProfile>(getProfile)
-  const [projects, setProjects] = useState<Project[]>(getProjects)
+  const [profile, setProfile] = useState<UserProfile>({ name: '', nick: '', schoolYear: '', school: '', totalPoints: 0 })
+  const [projects, setProjects] = useState<Project[]>([])
   const [schoolDays, setSchoolDays] = useState<number[]>(() => {
-    return readStorage<number[]>('classmate-school-days', [0, 1, 2, 3, 4])
+    const saved = localStorage.getItem('classmate-school-days')
+    return saved ? JSON.parse(saved) : [0, 1, 2, 3, 4]
   })
 
   useEffect(() => subscribeToTasks(userId, setTasks) ?? undefined, [userId])
+  useEffect(() => subscribeToProjects(userId, setProjects) ?? undefined, [userId])
+  useEffect(() => subscribeToProfile(userId, setProfile) ?? undefined, [userId])
 
   const pendingTasks = tasks.filter((task) => task.status === 'pending')
   const completedTasks = tasks.filter((task) => task.status === 'completed')
@@ -149,16 +150,23 @@ function App({ userId, onLogout }: AppProps) {
   }
 
   function toggleTask(taskId: string) {
-    const nextTasks: Task[] = tasks.map((task) =>
-      task.id === taskId
-        ? task.status === 'completed'
-          ? { ...task, status: 'pending' as const, completedAt: undefined }
-          : { ...task, status: 'completed' as const, completedAt: new Date().toISOString() }
-        : task,
-    )
-    setTasks(nextTasks)
-    saveTasks(nextTasks)
-    void updateCloudTask(userId, nextTasks.find((task) => task.id === taskId)!)
+    const task = tasks.find((t) => t.id === taskId)
+    if (!task) return
+    const isCompleted = task.status === 'completed'
+    
+    const nextTask: Task = {
+      ...task,
+      status: isCompleted ? 'pending' : 'completed',
+      completedAt: isCompleted ? undefined : new Date().toISOString(),
+    }
+    
+    setTasks(tasks.map((t) => t.id === taskId ? nextTask : t))
+    void updateCloudTask(userId, nextTask)
+
+    if (!isCompleted) {
+      const points = pointsForTask(task)
+      updateProfile({ ...profile, totalPoints: (profile.totalPoints || 0) + points })
+    }
   }
 
   function saveTask(event: React.FormEvent<HTMLFormElement>) {
@@ -183,7 +191,7 @@ function App({ userId, onLogout }: AppProps) {
       ? tasks.map((item) => item.id === editingTask.id ? task : item)
       : [...tasks, task]
     setTasks(nextTasks)
-    saveTasks(nextTasks)
+    
     if (editingTask) void updateCloudTask(userId, task)
     else void createCloudTask(userId, task)
     setShowTaskForm(false)
@@ -211,7 +219,6 @@ function App({ userId, onLogout }: AppProps) {
   function deleteTask(taskId: string) {
     const nextTasks = tasks.filter((task) => task.id !== taskId)
     setTasks(nextTasks)
-    saveTasks(nextTasks)
     void deleteCloudTask(userId, taskId)
   }
 
@@ -231,26 +238,29 @@ function App({ userId, onLogout }: AppProps) {
 
   function updateProfile(nextProfile: UserProfile) {
     setProfile(nextProfile)
-    saveProfile(nextProfile)
+    void updateCloudProfile(userId, nextProfile)
   }
 
   function saveProject(project: Project) {
-    const nextProjects = projects.some((item) => item.id === project.id)
+    const isExisting = projects.some((item) => item.id === project.id)
+    const nextProjects = isExisting
       ? projects.map((item) => item.id === project.id ? project : item)
       : [...projects, project]
     setProjects(nextProjects)
-    saveProjects(nextProjects)
+    
+    if (isExisting) void updateCloudProject(userId, project)
+    else void createCloudProject(userId, project)
   }
 
   function deleteProject(projectId: string) {
     const nextProjects = projects.filter((project) => project.id !== projectId)
     setProjects(nextProjects)
-    saveProjects(nextProjects)
+    void deleteCloudProject(userId, projectId)
   }
 
   function updateSchoolDays(days: number[]) {
     setSchoolDays(days)
-    writeStorage('classmate-school-days', days)
+    localStorage.setItem('classmate-school-days', JSON.stringify(days))
   }
 
   function renderTask(task: Task, showActions = false) {
@@ -373,7 +383,7 @@ function App({ userId, onLogout }: AppProps) {
           <p className="section-kicker">Plan rapido</p>
           <h2>Cuanto tiempo tienes?</h2>
           <p className="muted-copy">Te propondremos una combinacion realista.</p>
-          <div className="minutes-grid">{[15, 30, 45, 60, 90, 120, 150, 180].map((minutes) => <button className={selectedMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => { setSelectedMinutes(minutes); writeStorage('classmate-planner-minutes', minutes) }}>{formatDuration(minutes)}</button>)}</div>
+          <div className="minutes-grid">{[15, 30, 45, 60, 90, 120, 150, 180].map((minutes) => <button className={selectedMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => { setSelectedMinutes(minutes); localStorage.setItem('classmate-planner-minutes', JSON.stringify(minutes)) }}>{formatDuration(minutes)}</button>)}</div>
           {selectedMinutes && <p className="selected-time"><Clock3 size={15} /> Tiempo elegido: <strong>{formatDuration(selectedMinutes)}</strong></p>}
           {selectedMinutes && <div className="plan-result"><strong>Tu plan de {formatDuration(selectedMinutes)}</strong><span>{recommendedTasks[0] ? `Te recomendamos empezar por ${recommendedTasks[0].title}.` : 'No hay una tarea que encaje en ese tiempo.'}</span>{recommendedTasks.length > 0 && <small>Prioridad: {importanceLabels[recommendedTasks[0].importance].toLowerCase()} · {priorityLabels[recommendedTasks[0].priority].toLowerCase()}</small>}<button onClick={() => setShowMinutes(false)}>Empezar plan <ArrowRight size={16} /></button></div>}
         </section>
