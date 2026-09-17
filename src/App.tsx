@@ -16,6 +16,7 @@ import {
   Plus,
   Share2,
   Sparkles,
+  Table,
   UserRound,
   X,
 } from 'lucide-react'
@@ -23,11 +24,14 @@ import { subscribeToTasks, createCloudTask, updateCloudTask, deleteCloudTask } f
 import ProfileView from './features/profile/ProfileView'
 import ProjectsView from './features/projects/ProjectsView'
 import CalendarView from './features/calendar/CalendarView'
+import TimetableView from './features/timetable/TimetableView'
 import { subscribeToProjects, createCloudProject, updateCloudProject, deleteCloudProject } from './services/projectService'
+import { subscribeToTimetable, createCloudTimetableSlot, updateCloudTimetableSlot, deleteCloudTimetableSlot } from './services/timetableService'
 import { subscribeToProfile, updateCloudProfile } from './services/profileService'
 import { getRewardSummary, pointsForTask } from './services/rewardService'
 import type { Project } from './types/project'
 import type { Task, TaskImportance, TaskPriority } from './types/task'
+import type { TimetableSlot } from './types/timetable'
 import type { UserProfile } from './types/userProfile'
 
 const priorityLabels: Record<TaskPriority, string> = {
@@ -72,9 +76,11 @@ function App({ userId, onLogout }: AppProps) {
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [newTaskDueDate, setNewTaskDueDate] = useState('')
+  const [newTaskSubject, setNewTaskSubject] = useState('')
   const [activeTab, setActiveTab] = useState('Hoy')
   const [profile, setProfile] = useState<UserProfile>({ name: '', nick: '', schoolYear: '', school: '', totalPoints: 0 })
   const [projects, setProjects] = useState<Project[]>([])
+  const [timetable, setTimetable] = useState<TimetableSlot[]>([])
   const [schoolDays, setSchoolDays] = useState<number[]>(() => {
     const saved = localStorage.getItem('classmate-school-days')
     return saved ? JSON.parse(saved) : [0, 1, 2, 3, 4]
@@ -82,6 +88,7 @@ function App({ userId, onLogout }: AppProps) {
 
   useEffect(() => subscribeToTasks(userId, setTasks) ?? undefined, [userId])
   useEffect(() => subscribeToProjects(userId, setProjects) ?? undefined, [userId])
+  useEffect(() => subscribeToTimetable(userId, setTimetable) ?? undefined, [userId])
   useEffect(() => subscribeToProfile(userId, setProfile) ?? undefined, [userId])
 
   const pendingTasks = tasks.filter((task) => task.status === 'pending')
@@ -204,6 +211,7 @@ function App({ userId, onLogout }: AppProps) {
   function openNewTask() {
     setEditingTask(null)
     setNewTaskDueDate('')
+    setNewTaskSubject('')
     setShowTaskForm(true)
   }
 
@@ -211,6 +219,14 @@ function App({ userId, onLogout }: AppProps) {
     if (date < new Date().toISOString().slice(0, 10)) return
     setEditingTask(null)
     setNewTaskDueDate(date)
+    setNewTaskSubject('')
+    setShowTaskForm(true)
+  }
+
+  function openTaskForSubject(subject: string) {
+    setEditingTask(null)
+    setNewTaskDueDate('')
+    setNewTaskSubject(subject)
     setShowTaskForm(true)
   }
 
@@ -261,6 +277,23 @@ function App({ userId, onLogout }: AppProps) {
     void deleteCloudProject(userId, projectId)
   }
 
+  function saveTimetableSlot(slot: TimetableSlot) {
+    const isExisting = timetable.some((item) => item.id === slot.id)
+    const nextTimetable = isExisting
+      ? timetable.map((item) => item.id === slot.id ? slot : item)
+      : [...timetable, slot]
+    setTimetable(nextTimetable)
+    
+    if (isExisting) void updateCloudTimetableSlot(userId, slot)
+    else void createCloudTimetableSlot(userId, slot)
+  }
+
+  function deleteTimetableSlot(slotId: string) {
+    const nextTimetable = timetable.filter((slot) => slot.id !== slotId)
+    setTimetable(nextTimetable)
+    void deleteCloudTimetableSlot(userId, slotId)
+  }
+
   function updateSchoolDays(days: number[]) {
     setSchoolDays(days)
     localStorage.setItem('classmate-school-days', JSON.stringify(days))
@@ -295,7 +328,7 @@ function App({ userId, onLogout }: AppProps) {
       </header>
 
       <main className="content">
-        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">Miercoles, 16 de septiembre</p>
@@ -371,6 +404,7 @@ function App({ userId, onLogout }: AppProps) {
       <nav className="bottom-nav" aria-label="Navegacion principal">
         {[
           { label: 'Hoy', icon: Home },
+          { label: 'Horario', icon: Table },
           { label: 'Tareas', icon: ListChecks },
           { label: 'Proyectos', icon: FolderKanban },
           { label: 'Calendario', icon: CalendarDays },
@@ -413,7 +447,7 @@ function App({ userId, onLogout }: AppProps) {
           <button type="button" className="modal-close" onClick={() => { setShowTaskForm(false); setEditingTask(null) }} aria-label="Cerrar"><X size={19} /></button>
           <p className="section-kicker">{editingTask ? 'Editar tarea' : 'Nueva tarea'}</p><h2>{editingTask ? 'Actualiza tu tarea' : 'Vamos a apuntarla'}</h2>
           <label>Que tienes que hacer?<input name="title" defaultValue={editingTask?.title} placeholder="Ej. Leer el capitulo 4" required autoFocus /></label>
-          <label>Asignatura<input name="subject" defaultValue={editingTask?.subject} placeholder="Ej. Historia" required /></label>
+          <label>Asignatura<input name="subject" defaultValue={editingTask?.subject ?? newTaskSubject} placeholder="Ej. Historia" required /></label>
           <label>Importancia<select name="importance" defaultValue={editingTask?.importance ?? 'normal'}><option value="essential">Esencial</option><option value="important">Importante</option><option value="normal">Normal</option></select></label>
           <label>Prioridad<select name="priority" defaultValue={editingTask?.priority ?? 'medium'}><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></select></label>
           <label>Tiempo estimado<select name="minutes" defaultValue={String(editingTask?.estimatedMinutes ?? 30)}><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">1 hora</option><option value="90">1,5 horas</option><option value="120">2 horas</option><option value="150">2,5 horas</option><option value="180">3 horas</option></select></label>
