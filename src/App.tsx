@@ -20,6 +20,9 @@ import {
   X,
 } from 'lucide-react'
 import { subscribeToTasks, createCloudTask, updateCloudTask, deleteCloudTask } from './services/taskService'
+import ProfileView from './features/profile/ProfileView'
+import ProjectsView from './features/projects/ProjectsView'
+import CalendarView from './features/calendar/CalendarView'
 import { subscribeToProjects, createCloudProject, updateCloudProject, deleteCloudProject } from './services/projectService'
 import { subscribeToProfile, updateCloudProfile } from './services/profileService'
 import { getRewardSummary, pointsForTask } from './services/rewardService'
