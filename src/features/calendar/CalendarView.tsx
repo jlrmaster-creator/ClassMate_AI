@@ -16,6 +16,10 @@ function toDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+function todayKey(): string {
+  return toDateKey(new Date())
+}
+
 function getMonthDays(month: Date): Date[] {
   const firstDay = new Date(month.getFullYear(), month.getMonth(), 1)
   const offset = (firstDay.getDay() + 6) % 7
@@ -50,7 +54,7 @@ export default function CalendarView({ tasks, schoolDays, onSchoolDaysChange, on
           return <button className={`calendar-day ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`} key={dateKey} onClick={() => setSelectedDate(dateKey)}><span>{date.getDate()}</span>{dayTasks.length > 0 && <b>{dayTasks.length}</b>}</button>
         })}</div>
       </div>
-      <div className="calendar-day-detail"><div><p className="section-kicker">{new Date(`${selectedDate}T12:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p><h3>{selectedTasks.length ? `${selectedTasks.length} tarea${selectedTasks.length === 1 ? '' : 's'}` : 'Día libre'}</h3></div><button className="add-task-button" onClick={() => onCreateTask(selectedDate)} aria-label="Crear tarea en este día"><Plus size={21} /></button></div>
+      <div className="calendar-day-detail"><div><p className="section-kicker">{new Date(`${selectedDate}T12:00:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p><h3>{selectedTasks.length ? `${selectedTasks.length} tarea${selectedTasks.length === 1 ? '' : 's'}` : 'Día libre'}</h3></div><button className="add-task-button" disabled={selectedDate < todayKey()} onClick={() => onCreateTask(selectedDate)} aria-label={selectedDate < todayKey() ? 'No se pueden crear tareas en días pasados' : 'Crear tarea en este día'}><Plus size={21} /></button></div>
       {selectedTasks.length > 0 && <div className="calendar-task-list">{selectedTasks.map((task) => <div className="calendar-task" key={task.id}><span className={`calendar-task-dot ${task.priority}`} /><span>{task.title}</span><small>{task.estimatedMinutes} min</small></div>)}</div>}
       {showSettings && <div className="modal-backdrop" onClick={() => setShowSettings(false)}><section className="modal school-days-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowSettings(false)} aria-label="Cerrar"><X size={19} /></button><span className="modal-symbol"><CalendarDays size={22} /></span><p className="section-kicker">Configuración</p><h2>Días lectivos</h2><p className="muted-copy">Elige qué días sueles tener clase. Se usan para organizar tus planes.</p><div className="school-days-list">{weekdayNames.map((day, index) => <label key={day}><input type="checkbox" checked={schoolDays.includes(index)} onChange={() => onSchoolDaysChange(schoolDays.includes(index) ? schoolDays.filter((item) => item !== index) : [...schoolDays, index].sort())} /><span>{day}</span></label>)}</div><button className="primary-button" onClick={() => setShowSettings(false)}>Guardar configuración</button></section></div>}
     </section>

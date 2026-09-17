@@ -11,4 +11,5 @@ export interface Task {
   priority: TaskPriority
   importance: TaskImportance
   status: TaskStatus
+  completedAt?: string
 }

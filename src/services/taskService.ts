@@ -1,4 +1,5 @@
 import type { Task } from '../types/task'
+import { readStorage, removeStorage, writeStorage } from './safeStorage'
 
 const STORAGE_KEY = 'classmate-tasks'
 
@@ -36,17 +37,11 @@ const starterTasks: Task[] = [
 ]
 
 export function getTasks(): Task[] {
-  const storedTasks = localStorage.getItem(STORAGE_KEY)
-  if (!storedTasks) return starterTasks
-  try {
-    const tasks = JSON.parse(storedTasks) as Partial<Task>[]
-    return tasks.map((task) => ({ ...task, importance: task.importance ?? 'normal' })) as Task[]
-  } catch {
-    localStorage.removeItem(STORAGE_KEY)
-    return starterTasks
-  }
+  const tasks = readStorage<Partial<Task>[] | null>(STORAGE_KEY, null)
+  if (!tasks) return starterTasks
+  return tasks.map((task) => ({ ...task, importance: task.importance ?? 'normal' })) as Task[]
 }
 
 export function saveTasks(tasks: Task[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
+  writeStorage(STORAGE_KEY, tasks)
 }

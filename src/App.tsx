@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ArrowRight,
-  Bell,
+  Timer,
   BookOpen,
   Check,
   ChevronDown,
@@ -25,6 +25,9 @@ import ProjectsView from './features/projects/ProjectsView'
 import CalendarView from './features/calendar/CalendarView'
 import { getProfile, saveProfile } from './services/profileService'
 import { getProjects, saveProjects } from './services/projectService'
+import { readStorage, writeStorage } from './services/safeStorage'
+import { getRewardSummary } from './services/rewardService'
+import { createCloudTask, deleteCloudTask, subscribeToTasks, updateCloudTask } from './services/firestoreTaskService'
 import type { Project } from './types/project'
 import type { Task, TaskImportance, TaskPriority } from './types/task'
 import type { UserProfile } from './types/userProfile'
@@ -53,16 +56,18 @@ function formatDuration(minutes: number): string {
 }
 
 interface AppProps {
+  userId: string
   onLogout: () => Promise<void>
 }
 
-function App({ onLogout }: AppProps) {
+function App({ userId, onLogout }: AppProps) {
   const [tasks, setTasks] = useState<Task[]>(getTasks)
   const [showMinutes, setShowMinutes] = useState(false)
-  const [selectedMinutes, setSelectedMinutes] = useState<number | null>(() => {
-    const storedMinutes = localStorage.getItem('classmate-planner-minutes')
-    return storedMinutes ? Number(storedMinutes) : null
-  })
+  const [showPomodoro, setShowPomodoro] = useState(false)
+  const [pomodoroMinutes, setPomodoroMinutes] = useState(15)
+  const [pomodoroRemaining, setPomodoroRemaining] = useState(15 * 60)
+  const [pomodoroRunning, setPomodoroRunning] = useState(false)
+  const [selectedMinutes, setSelectedMinutes] = useState<number | null>(() => readStorage<number | null>('classmate-planner-minutes', null))
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [newTaskDueDate, setNewTaskDueDate] = useState('')
@@ -70,9 +75,10 @@ function App({ onLogout }: AppProps) {
   const [profile, setProfile] = useState<UserProfile>(getProfile)
   const [projects, setProjects] = useState<Project[]>(getProjects)
   const [schoolDays, setSchoolDays] = useState<number[]>(() => {
-    const storedDays = localStorage.getItem('classmate-school-days')
-    return storedDays ? JSON.parse(storedDays) as number[] : [0, 1, 2, 3, 4]
+    return readStorage<number[]>('classmate-school-days', [0, 1, 2, 3, 4])
   })
+
+  useEffect(() => subscribeToTasks(userId, setTasks) ?? undefined, [userId])
 
   const pendingTasks = tasks.filter((task) => task.status === 'pending')
   const completedTasks = tasks.filter((task) => task.status === 'completed')
@@ -89,14 +95,70 @@ function App({ onLogout }: AppProps) {
     return priorityScore + importanceScore + shortTaskBonus
   }
 
+  useEffect(() => {
+    if (!pomodoroRunning) return undefined
+    const interval = window.setInterval(() => {
+      setPomodoroRemaining((remaining) => Math.max(remaining - 1, 0))
+    }, 1000)
+    return () => window.clearInterval(interval)
+  }, [pomodoroRunning])
+
+  useEffect(() => {
+    if (!pomodoroRunning || pomodoroRemaining > 0) return
+    setPomodoroRunning(false)
+    playPomodoroAlarm()
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('ClassMate AI', { body: 'Tu sesión de estudio ha terminado.' })
+    }
+  }, [pomodoroRemaining, pomodoroRunning])
+
+  function playPomodoroAlarm() {
+    const audioContext = new AudioContext()
+    const oscillator = audioContext.createOscillator()
+    const gain = audioContext.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.value = 880
+    gain.gain.setValueAtTime(0.001, audioContext.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.35, audioContext.currentTime + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.45)
+    oscillator.connect(gain)
+    gain.connect(audioContext.destination)
+    oscillator.start()
+    oscillator.stop(audioContext.currentTime + 0.45)
+    oscillator.addEventListener('ended', () => void audioContext.close())
+  }
+
+  function choosePomodoro(minutes: number) {
+    setPomodoroMinutes(minutes)
+    setPomodoroRemaining(minutes * 60)
+    setPomodoroRunning(false)
+  }
+
+  async function startPomodoro() {
+    if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission()
+    setPomodoroRunning(true)
+  }
+
+  function resetPomodoro() {
+    setPomodoroRunning(false)
+    setPomodoroRemaining(pomodoroMinutes * 60)
+  }
+
+  function formatPomodoroTime(seconds: number) {
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+  }
+
   function toggleTask(taskId: string) {
     const nextTasks: Task[] = tasks.map((task) =>
       task.id === taskId
-        ? { ...task, status: task.status === 'completed' ? 'pending' : 'completed' }
+        ? task.status === 'completed'
+          ? { ...task, status: 'pending' as const, completedAt: undefined }
+          : { ...task, status: 'completed' as const, completedAt: new Date().toISOString() }
         : task,
     )
     setTasks(nextTasks)
     saveTasks(nextTasks)
+    void updateCloudTask(userId, nextTasks.find((task) => task.id === taskId)!)
   }
 
   function saveTask(event: React.FormEvent<HTMLFormElement>) {
@@ -122,6 +184,8 @@ function App({ onLogout }: AppProps) {
       : [...tasks, task]
     setTasks(nextTasks)
     saveTasks(nextTasks)
+    if (editingTask) void updateCloudTask(userId, task)
+    else void createCloudTask(userId, task)
     setShowTaskForm(false)
     setEditingTask(null)
   }
@@ -133,6 +197,7 @@ function App({ onLogout }: AppProps) {
   }
 
   function openTaskForDate(date: string) {
+    if (date < new Date().toISOString().slice(0, 10)) return
     setEditingTask(null)
     setNewTaskDueDate(date)
     setShowTaskForm(true)
@@ -147,6 +212,7 @@ function App({ onLogout }: AppProps) {
     const nextTasks = tasks.filter((task) => task.id !== taskId)
     setTasks(nextTasks)
     saveTasks(nextTasks)
+    void deleteCloudTask(userId, taskId)
   }
 
   function shareTask(task: Task) {
@@ -184,7 +250,7 @@ function App({ onLogout }: AppProps) {
 
   function updateSchoolDays(days: number[]) {
     setSchoolDays(days)
-    localStorage.setItem('classmate-school-days', JSON.stringify(days))
+    writeStorage('classmate-school-days', days)
   }
 
   function renderTask(task: Task, showActions = false) {
@@ -212,11 +278,11 @@ function App({ onLogout }: AppProps) {
           <span className="brand-icon"><Sparkles size={17} /></span>
           <span>ClassMate <strong>AI</strong></span>
         </div>
-        <div className="topbar-actions"><button className="icon-button" aria-label="Notificaciones"><Bell size={20} /></button><button className="icon-button" onClick={onLogout} aria-label="Cerrar sesion"><LogOut size={18} /></button></div>
+        <div className="topbar-actions"><button className="icon-button" onClick={() => setShowPomodoro(true)} aria-label="Abrir temporizador Pomodoro"><Timer size={20} /></button><button className="icon-button" onClick={onLogout} aria-label="Cerrar sesion"><LogOut size={18} /></button></div>
       </header>
 
       <main className="content">
-        {activeTab === 'Perfil' ? <ProfileView profile={profile} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">Miercoles, 16 de septiembre</p>
@@ -307,9 +373,22 @@ function App({ onLogout }: AppProps) {
           <p className="section-kicker">Plan rapido</p>
           <h2>Cuanto tiempo tienes?</h2>
           <p className="muted-copy">Te propondremos una combinacion realista.</p>
-          <div className="minutes-grid">{[15, 30, 45, 60, 90, 120, 150, 180].map((minutes) => <button className={selectedMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => { setSelectedMinutes(minutes); localStorage.setItem('classmate-planner-minutes', String(minutes)) }}>{formatDuration(minutes)}</button>)}</div>
+          <div className="minutes-grid">{[15, 30, 45, 60, 90, 120, 150, 180].map((minutes) => <button className={selectedMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => { setSelectedMinutes(minutes); writeStorage('classmate-planner-minutes', minutes) }}>{formatDuration(minutes)}</button>)}</div>
           {selectedMinutes && <p className="selected-time"><Clock3 size={15} /> Tiempo elegido: <strong>{formatDuration(selectedMinutes)}</strong></p>}
           {selectedMinutes && <div className="plan-result"><strong>Tu plan de {formatDuration(selectedMinutes)}</strong><span>{recommendedTasks[0] ? `Te recomendamos empezar por ${recommendedTasks[0].title}.` : 'No hay una tarea que encaje en ese tiempo.'}</span>{recommendedTasks.length > 0 && <small>Prioridad: {importanceLabels[recommendedTasks[0].importance].toLowerCase()} · {priorityLabels[recommendedTasks[0].priority].toLowerCase()}</small>}<button onClick={() => setShowMinutes(false)}>Empezar plan <ArrowRight size={16} /></button></div>}
+        </section>
+      </div>}
+
+      {showPomodoro && <div className="modal-backdrop" onClick={() => setShowPomodoro(false)}>
+        <section className="modal pomodoro-modal" onClick={(event) => event.stopPropagation()}>
+          <button className="modal-close" onClick={() => setShowPomodoro(false)} aria-label="Cerrar"><X size={19} /></button>
+          <span className="modal-symbol"><Timer size={22} /></span>
+          <p className="section-kicker">Temporizador de estudio</p>
+          <h2>Pomodoro</h2>
+          <p className="muted-copy">Concéntrate durante un tiempo y recibe una alarma al terminar.</p>
+          <div className="pomodoro-time">{formatPomodoroTime(pomodoroRemaining)}</div>
+          <div className="pomodoro-options">{[15, 30, 60].map((minutes) => <button className={pomodoroMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => choosePomodoro(minutes)} disabled={pomodoroRunning}>{minutes === 60 ? '1 hora' : `${minutes} min`}</button>)}</div>
+          <div className="pomodoro-actions"><button className="primary-button" onClick={pomodoroRunning ? () => setPomodoroRunning(false) : startPomodoro}>{pomodoroRunning ? 'Pausar' : pomodoroRemaining === 0 ? 'Empezar de nuevo' : 'Empezar sesión'} <Timer size={17} /></button><button className="pomodoro-reset" onClick={resetPomodoro}>Reiniciar</button></div>
         </section>
       </div>}
 
@@ -322,7 +401,7 @@ function App({ onLogout }: AppProps) {
           <label>Importancia<select name="importance" defaultValue={editingTask?.importance ?? 'normal'}><option value="essential">Esencial</option><option value="important">Importante</option><option value="normal">Normal</option></select></label>
           <label>Prioridad<select name="priority" defaultValue={editingTask?.priority ?? 'medium'}><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></select></label>
           <label>Tiempo estimado<select name="minutes" defaultValue={String(editingTask?.estimatedMinutes ?? 30)}><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">1 hora</option><option value="90">1,5 horas</option><option value="120">2 horas</option><option value="150">2,5 horas</option><option value="180">3 horas</option></select></label>
-          <label>Fecha de entrega<input name="dueDate" type="date" defaultValue={editingTask?.dueDate ?? newTaskDueDate} /></label>
+          <label>Fecha de entrega<input name="dueDate" type="date" min={new Date().toISOString().slice(0, 10)} defaultValue={editingTask?.dueDate ?? newTaskDueDate} /></label>
           <button className="primary-button" type="submit">Guardar tarea <ArrowRight size={17} /></button>
         </form>
       </div>}

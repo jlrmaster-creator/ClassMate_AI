@@ -59,7 +59,7 @@ export default function AuthGate() {
   }
 
   if (checking) return <div className="auth-loading"><Sparkles size={22} /> Preparando tu espacio...</div>
-  if (user) return <App onLogout={logout} />
+  if (user) return <App userId={user.uid} onLogout={logout} />
 
   return (
     <main className="auth-page">

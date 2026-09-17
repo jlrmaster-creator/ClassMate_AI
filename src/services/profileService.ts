@@ -1,4 +1,5 @@
 import type { UserProfile } from '../types/userProfile'
+import { readStorage, writeStorage } from './safeStorage'
 
 const STORAGE_KEY = 'classmate-profile'
 
@@ -10,16 +11,9 @@ const emptyProfile: UserProfile = {
 }
 
 export function getProfile(): UserProfile {
-  const storedProfile = localStorage.getItem(STORAGE_KEY)
-  if (!storedProfile) return emptyProfile
-  try {
-    return { ...emptyProfile, ...JSON.parse(storedProfile) as Partial<UserProfile> }
-  } catch {
-    localStorage.removeItem(STORAGE_KEY)
-    return emptyProfile
-  }
+  return { ...emptyProfile, ...readStorage<Partial<UserProfile> | null>(STORAGE_KEY, null) }
 }
 
 export function saveProfile(profile: UserProfile): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(profile))
+  writeStorage(STORAGE_KEY, profile)
 }
