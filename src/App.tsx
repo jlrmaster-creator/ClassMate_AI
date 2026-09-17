@@ -329,6 +329,10 @@ function App({ userId, onLogout }: AppProps) {
             {tasks.length === 0 && <div className="empty-state"><span><ListChecks size={24} /></span><h3>No tienes tareas</h3><p>Añade una para empezar a organizarte.</p></div>}
           </div>
           {tasks.length > 0 && <p className="tasks-retention"><Check size={15} /> Las tareas completadas seguirán aquí hasta que las elimines.</p>}
+          <section className="quick-add">
+            <div><span className="section-kicker">Añade sin complicarte</span><h2>¿Qué tienes que hacer?</h2></div>
+            <button className="add-task-button" onClick={openNewTask} aria-label="Anadir tarea"><Plus size={22} /></button>
+          </section>
         </section> : <>
         <section className="section-heading">
           <div>
@@ -370,10 +374,9 @@ function App({ userId, onLogout }: AppProps) {
           { label: 'Tareas', icon: ListChecks },
           { label: 'Proyectos', icon: FolderKanban },
           { label: 'Calendario', icon: CalendarDays },
-          { label: 'Anadir', icon: CirclePlus },
           { label: 'Perfil', icon: UserRound },
         ].map(({ label, icon: Icon }) => (
-          <button className={activeTab === label ? 'nav-item active' : 'nav-item'} key={label} onClick={() => label === 'Anadir' ? openNewTask() : setActiveTab(label)}>
+          <button className={activeTab === label ? 'nav-item active' : 'nav-item'} key={label} onClick={() => setActiveTab(label)}>
             <Icon size={20} /><span>{label}</span>
           </button>
         ))}
