@@ -29,8 +29,9 @@ import { subscribeToProjects, createCloudProject, updateCloudProject, deleteClou
 import { subscribeToTimetable, createCloudTimetableSlot, updateCloudTimetableSlot, deleteCloudTimetableSlot } from './services/timetableService'
 import { subscribeToProfile, updateCloudProfile } from './services/profileService'
 import { getRewardSummary, pointsForTask } from './services/rewardService'
+import { generateStudySessions } from './services/examService'
 import type { Project } from './types/project'
-import type { Task, TaskImportance, TaskPriority } from './types/task'
+import type { Task, TaskImportance, TaskPriority, TaskType } from './types/task'
 import type { TimetableSlot } from './types/timetable'
 import type { UserProfile } from './types/userProfile'
 
@@ -77,6 +78,7 @@ function App({ userId, onLogout }: AppProps) {
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [newTaskDueDate, setNewTaskDueDate] = useState('')
   const [newTaskSubject, setNewTaskSubject] = useState('')
+  const [taskFormType, setTaskFormType] = useState<TaskType>('task')
   const [activeTab, setActiveTab] = useState('Hoy')
   const [profile, setProfile] = useState<UserProfile>({ name: '', nick: '', schoolYear: '', school: '', totalPoints: 0 })
   const [projects, setProjects] = useState<Project[]>([])
@@ -185,33 +187,63 @@ function App({ userId, onLogout }: AppProps) {
     const title = String(formData.get('title') ?? '').trim()
     const subject = String(formData.get('subject') ?? '').trim()
     const minutes = Number(formData.get('minutes') ?? 30)
+    const type = String(formData.get('type') ?? 'task') as TaskType
+    const dueDate = String(formData.get('dueDate') ?? '')
+    const examTopicsRaw = String(formData.get('examTopics') ?? '').trim()
     if (!title || !subject || !minutes) return
 
     const task: Task = {
       id: editingTask?.id ?? crypto.randomUUID(),
+      type,
       title,
       subject,
-      dueDate: String(formData.get('dueDate') ?? ''),
+      dueDate,
       estimatedMinutes: minutes,
       priority: String(formData.get('priority') ?? 'medium') as TaskPriority,
       importance: String(formData.get('importance') ?? 'normal') as TaskImportance,
       status: editingTask?.status ?? 'pending',
+      examTopics: type === 'exam' ? examTopicsRaw : undefined,
     }
-    const nextTasks = editingTask
-      ? tasks.map((item) => item.id === editingTask.id ? task : item)
-      : [...tasks, task]
-    setTasks(nextTasks)
-    
-    if (editingTask) void updateCloudTask(userId, task)
-    else void createCloudTask(userId, task)
+
+    if (editingTask) {
+      setTasks(tasks.map((item) => item.id === editingTask.id ? task : item))
+      void updateCloudTask(userId, task)
+    } else {
+      setTasks([...tasks, task])
+      void createCloudTask(userId, task)
+
+      // If exam mode: auto-generate study sessions
+      if (type === 'exam' && dueDate) {
+        const topics = examTopicsRaw ? examTopicsRaw.split(',').map((t) => t.trim()).filter(Boolean) : []
+        const sessions = generateStudySessions(subject, dueDate, topics, minutes, task.priority)
+        sessions.forEach((session) => {
+          const sessionTask: Task = {
+            id: crypto.randomUUID(),
+            type: 'task',
+            subject,
+            title: session.title,
+            dueDate: session.dueDate,
+            estimatedMinutes: session.estimatedMinutes,
+            priority: session.priority,
+            importance: session.importance,
+            status: 'pending',
+            parentExamId: task.id,
+          }
+          void createCloudTask(userId, sessionTask)
+        })
+      }
+    }
+
     setShowTaskForm(false)
     setEditingTask(null)
+    setTaskFormType('task')
   }
 
   function openNewTask() {
     setEditingTask(null)
     setNewTaskDueDate('')
     setNewTaskSubject('')
+    setTaskFormType('task')
     setShowTaskForm(true)
   }
 
@@ -301,13 +333,17 @@ function App({ userId, onLogout }: AppProps) {
 
   function renderTask(task: Task, showActions = false) {
     const isCompleted = task.status === 'completed'
+    const isExam = task.type === 'exam'
     return (
-      <article className={`task-item ${priorityColors[task.priority]} ${isCompleted ? 'task-completed' : ''}`} key={task.id}>
+      <article className={`task-item ${priorityColors[task.priority]} ${isCompleted ? 'task-completed' : ''} ${isExam ? 'task-exam' : ''}`} key={task.id}>
         <button className="task-check" onClick={() => toggleTask(task.id)} aria-label={`${isCompleted ? 'Reabrir' : 'Completar'} ${task.title}`}>
           {isCompleted && <Check size={16} />}
         </button>
         <div className="task-body">
-          <span className="task-priority">{isCompleted ? 'Completada' : `${priorityLabels[task.priority]} · ${importanceLabels[task.importance]}`}</span>
+          <span className="task-priority">
+            {isExam && <span className="exam-badge">📝 Examen</span>}
+            {!isExam && (isCompleted ? 'Completada' : `${priorityLabels[task.priority]} · ${importanceLabels[task.importance]}`)}
+          </span>
           <p className="task-subject">{task.subject}</p>
           <h3>{task.title}</h3>
           <span className="task-time"><Clock3 size={14} /> {task.estimatedMinutes} min</span>
@@ -442,17 +478,43 @@ function App({ userId, onLogout }: AppProps) {
         </section>
       </div>}
 
-      {showTaskForm && <div className="modal-backdrop" onClick={() => { setShowTaskForm(false); setEditingTask(null) }}>
+      {showTaskForm && <div className="modal-backdrop" onClick={() => { setShowTaskForm(false); setEditingTask(null); setTaskFormType('task') }}>
         <form className="modal task-form" onSubmit={saveTask} onClick={(event) => event.stopPropagation()}>
-          <button type="button" className="modal-close" onClick={() => { setShowTaskForm(false); setEditingTask(null) }} aria-label="Cerrar"><X size={19} /></button>
-          <p className="section-kicker">{editingTask ? 'Editar tarea' : 'Nueva tarea'}</p><h2>{editingTask ? 'Actualiza tu tarea' : 'Vamos a apuntarla'}</h2>
-          <label>Que tienes que hacer?<input name="title" defaultValue={editingTask?.title} placeholder="Ej. Leer el capitulo 4" required autoFocus /></label>
-          <label>Asignatura<input name="subject" defaultValue={editingTask?.subject ?? newTaskSubject} placeholder="Ej. Historia" required /></label>
-          <label>Importancia<select name="importance" defaultValue={editingTask?.importance ?? 'normal'}><option value="essential">Esencial</option><option value="important">Importante</option><option value="normal">Normal</option></select></label>
-          <label>Prioridad<select name="priority" defaultValue={editingTask?.priority ?? 'medium'}><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></select></label>
-          <label>Tiempo estimado<select name="minutes" defaultValue={String(editingTask?.estimatedMinutes ?? 30)}><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">1 hora</option><option value="90">1,5 horas</option><option value="120">2 horas</option><option value="150">2,5 horas</option><option value="180">3 horas</option></select></label>
-          <label>Fecha de entrega<input name="dueDate" type="date" min={new Date().toISOString().slice(0, 10)} defaultValue={editingTask?.dueDate ?? newTaskDueDate} /></label>
-          <button className="primary-button" type="submit">Guardar tarea <ArrowRight size={17} /></button>
+          <button type="button" className="modal-close" onClick={() => { setShowTaskForm(false); setEditingTask(null); setTaskFormType('task') }} aria-label="Cerrar"><X size={19} /></button>
+
+          {/* Task type toggle — only shown when creating (not editing) */}
+          {!editingTask && (
+            <div className="task-type-toggle">
+              <button type="button" className={taskFormType === 'task' ? 'active' : ''} onClick={() => setTaskFormType('task')}>📋 Tarea</button>
+              <button type="button" className={taskFormType === 'exam' ? 'active' : ''} onClick={() => setTaskFormType('exam')}>📝 Examen</button>
+            </div>
+          )}
+
+          <input type="hidden" name="type" value={taskFormType} />
+
+          <p className="section-kicker">{editingTask ? 'Editar tarea' : taskFormType === 'exam' ? 'Nuevo examen' : 'Nueva tarea'}</p>
+          <h2>{editingTask ? 'Actualiza tu tarea' : taskFormType === 'exam' ? '¿Cuándo es el examen?' : 'Vamos a apuntarla'}</h2>
+
+          <label>Asignatura<input name="subject" defaultValue={editingTask?.subject ?? newTaskSubject} placeholder="Ej. Historia" required autoFocus /></label>
+          <label>{taskFormType === 'exam' ? 'Nombre del examen' : '¿Qué tienes que hacer?'}<input name="title" defaultValue={editingTask?.title} placeholder={taskFormType === 'exam' ? 'Ej. Examen Tema 4-6' : 'Ej. Leer el capítulo 4'} required /></label>
+
+          {taskFormType === 'exam' && (
+            <label>
+              Temas a estudiar <span className="label-hint">(separados por comas)</span>
+              <input name="examTopics" defaultValue={editingTask?.examTopics} placeholder="Ej. Revolución Francesa, Napoleón, Restauración" />
+            </label>
+          )}
+
+          <label>Prioridad<select name="priority" defaultValue={editingTask?.priority ?? (taskFormType === 'exam' ? 'high' : 'medium')}><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></select></label>
+          <label>Importancia<select name="importance" defaultValue={editingTask?.importance ?? (taskFormType === 'exam' ? 'essential' : 'normal')}><option value="essential">Esencial</option><option value="important">Importante</option><option value="normal">Normal</option></select></label>
+          <label>{taskFormType === 'exam' ? 'Minutos por sesión de estudio' : 'Tiempo estimado'}<select name="minutes" defaultValue={String(editingTask?.estimatedMinutes ?? 45)}><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="45">45 minutos</option><option value="60">1 hora</option><option value="90">1,5 horas</option><option value="120">2 horas</option><option value="150">2,5 horas</option><option value="180">3 horas</option></select></label>
+          <label>{taskFormType === 'exam' ? 'Fecha del examen' : 'Fecha de entrega'}<input name="dueDate" type="date" min={new Date().toISOString().slice(0, 10)} defaultValue={editingTask?.dueDate ?? newTaskDueDate} required={taskFormType === 'exam'} /></label>
+
+          {taskFormType === 'exam' && !editingTask && (
+            <p className="exam-hint">✨ ClassMate AI creará sesiones de estudio automáticamente repartidas entre hoy y la víspera del examen.</p>
+          )}
+
+          <button className="primary-button" type="submit">{taskFormType === 'exam' ? 'Planificar examen' : 'Guardar tarea'} <ArrowRight size={17} /></button>
         </form>
       </div>}
     </div>

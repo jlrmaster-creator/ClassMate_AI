@@ -19,6 +19,7 @@ function userTasksCollection(userId: string) {
 function taskFromDocument(id: string, data: Record<string, unknown>): Task {
   return {
     id,
+    type: (data.type === 'exam' ? 'exam' : 'task') as Task['type'],
     subject: String(data.subject ?? ''),
     title: String(data.title ?? ''),
     dueDate: typeof data.dueDate === 'string' ? data.dueDate : undefined,
@@ -27,8 +28,11 @@ function taskFromDocument(id: string, data: Record<string, unknown>): Task {
     importance: (data.importance ?? 'normal') as Task['importance'],
     status: (data.status ?? 'pending') as Task['status'],
     completedAt: typeof data.completedAt === 'string' ? data.completedAt : undefined,
+    examTopics: typeof data.examTopics === 'string' ? data.examTopics : undefined,
+    parentExamId: typeof data.parentExamId === 'string' ? data.parentExamId : undefined,
   }
 }
+
 
 export function subscribeToTasks(userId: string, onTasks: (tasks: Task[]) => void): Unsubscribe | null {
   const tasksCollection = userTasksCollection(userId)

@@ -74,3 +74,13 @@ h2 { margin: 5px 0 0; font-family: 'Fraunces', serif; font-size: 23px; letter-sp
 .slot-actions button { display: flex; align-items: center; gap: 4px; padding: 6px 10px; color: #718079; font-size: 11px; font-weight: 700; border: 0; border-radius: 8px; background: #f1f4f0; }
 .slot-actions button:hover { background: #e3eae3; }
 .time-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Exam Mode Styles */
+.task-type-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.task-type-toggle button { padding: 11px; color: #718079; font-weight: 700; border: 1.5px solid #e1e9e1; border-radius: 12px; background: #f7f9f7; transition: all .2s; }
+.task-type-toggle button.active { color: #fff; border-color: #397a60; background: #397a60; }
+.task-exam { border-left: 4px solid #8b5cf6 !important; }
+.task-exam.priority-high { border-left-color: #8b5cf6 !important; }
+.exam-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; color: #6d28d9; font-size: 11px; font-weight: 700; border-radius: 99px; background: #ede9fe; }
+.exam-hint { padding: 10px 12px; color: #315943; font-size: 12px; line-height: 1.5; border-radius: 10px; background: #e7f2e4; }
+.label-hint { color: #89958f; font-weight: 400; font-size: 11px; }
