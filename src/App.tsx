@@ -29,7 +29,7 @@ import TimetableView from './features/timetable/TimetableView'
 import StudyRoomView from './features/study/StudyRoomView'
 import { subscribeToProjects, createCloudProject, updateCloudProject, deleteCloudProject, joinProjectByCode } from './services/projectService'
 import { subscribeToTimetable, createCloudTimetableSlot, updateCloudTimetableSlot, deleteCloudTimetableSlot } from './services/timetableService'
-import { subscribeToProfile, updateCloudProfile } from './services/profileService'
+import { subscribeToProfile, updateCloudProfile, ensureCloudProfile, awardCloudPoints } from './services/profileService'
 import { getRewardSummary, pointsForTask } from './services/rewardService'
 import { buyItem, useItem, type StoreItem } from './services/storeService'
 import { generateStudySessions } from './services/examService'
@@ -96,6 +96,10 @@ function App({ userId, onLogout }: AppProps) {
   useEffect(() => subscribeToProjects(userId, setProjects) ?? undefined, [userId])
   useEffect(() => subscribeToTimetable(userId, setTimetable) ?? undefined, [userId])
   useEffect(() => subscribeToProfile(userId, setProfile) ?? undefined, [userId])
+  // Garantiza que el doc del perfil exista con los campos que exigen las reglas
+  // (id/createdAt/updatedAt); si no, las escrituras de totalPoints se deniegan en silencio
+  // y el saldo de la tienda nunca se actualiza al completar tareas.
+  useEffect(() => { void ensureCloudProfile(userId) }, [userId])
 
   // Aplica el tema de color comprado en la tienda
   useEffect(() => {
@@ -186,7 +190,10 @@ function App({ userId, onLogout }: AppProps) {
 
     if (!isCompleted) {
       const points = pointsForTask(task)
-      updateProfile({ ...profile, totalPoints: (profile.totalPoints || 0) + points })
+      // Suma ATOMICA en Firestore + update funcional local: evita lost-updates por closure
+      // desfasada y garantiza que la tienda reciba el saldo actualizado vía onSnapshot.
+      awardCloudPoints(userId, points)
+      setProfile((current) => ({ ...current, totalPoints: (current.totalPoints || 0) + points }))
     }
   }
 
@@ -306,7 +313,10 @@ function App({ userId, onLogout }: AppProps) {
     if (!result.ok || !result.profile) {
       return result.message ?? 'No se pudo completar la compra.'
     }
-    updateProfile(result.profile)
+    // Descuento ATOMICO (increment negativo) + estado funcional local para evitar lost-updates
+    // al comprar rápido; el saldo real siempre llega vía onSnapshot.
+    awardCloudPoints(userId, -item.price)
+    setProfile((current) => buyItem(current, item).profile ?? current)
     return null
   }
 
