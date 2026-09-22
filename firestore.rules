@@ -60,6 +60,22 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
 
+      match /timetable/{slotId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.userId == userId
+          && request.resource.data.subject is string
+          && request.resource.data.subject.size() > 0
+          && request.resource.data.subject.size() <= 80
+          && validTimestamp(request.resource.data.createdAt)
+          && validTimestamp(request.resource.data.updatedAt);
+        allow update: if isOwner(userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validTimestamp(request.resource.data.updatedAt);
+        allow delete: if isOwner(userId);
+      }
+
       match /projects/{projectId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId)

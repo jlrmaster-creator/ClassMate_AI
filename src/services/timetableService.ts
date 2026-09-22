@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -30,21 +29,28 @@ function slotFromDocument(id: string, data: Record<string, unknown>): TimetableS
 export function subscribeToTimetable(userId: string, onTimetable: (slots: TimetableSlot[]) => void): Unsubscribe | null {
   const timetableCol = userTimetableCollection(userId)
   if (!timetableCol) return null
-  return onSnapshot(timetableCol, (snapshot) => {
-    onTimetable(snapshot.docs.map((item) => slotFromDocument(item.id, item.data() as Record<string, unknown>)))
-  })
+  return onSnapshot(
+    timetableCol,
+    (snapshot) => {
+      onTimetable(snapshot.docs.map((item) => slotFromDocument(item.id, item.data() as Record<string, unknown>)))
+    },
+    (error) => {
+      console.error('[timetable] No se pudo sincronizar el horario:', error)
+    }
+  )
 }
 
 export async function createCloudTimetableSlot(userId: string, slot: TimetableSlot): Promise<string | null> {
-  const timetableCol = userTimetableCollection(userId)
-  if (!timetableCol) return null
+  if (!db) return null
   const { id, ...slotData } = slot
-  const slotRef = await addDoc(timetableCol, {
+  // Usamos el mismo id del estado local para que las actualizaciones coincidan siempre.
+  await setDoc(doc(db, 'users', userId, 'timetable', id), {
     ...slotData,
     userId,
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   })
-  return slotRef.id
+  return id
 }
 
 export async function updateCloudTimetableSlot(userId: string, slot: TimetableSlot): Promise<void> {
