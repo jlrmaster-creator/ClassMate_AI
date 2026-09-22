@@ -3,6 +3,7 @@ import { onAuthStateChanged, type User } from 'firebase/auth'
 import { ArrowRight, LockKeyhole, Mail, Sparkles } from 'lucide-react'
 import { auth } from '../../firebase/config'
 import { login, logout, register, resetPassword } from '../../services/authService'
+import { APP_VERSION } from '../../version'
 import App from '../../App'
 
 function getAuthMessage(code: string | undefined): string {
@@ -65,6 +66,7 @@ export default function AuthGate() {
     <main className="auth-page">
       <section className="auth-panel">
         <div className="brand-mark"><span className="brand-icon"><Sparkles size={17} /></span><span>ClassMate <strong>AI</strong></span></div>
+        <p className="app-version">v{APP_VERSION}</p>
         <div className="auth-intro"><span className="auth-symbol"><LockKeyhole size={23} /></span><p className="section-kicker">Tu espacio de estudio</p><h1>{resetMode ? 'Recupera tu acceso' : registerMode ? 'Empieza a organizarte' : 'Vuelve a lo importante'}</h1><p className="muted-copy">{resetMode ? 'Te enviaremos un enlace para crear una nueva contrasena.' : 'Tus tareas, proyectos y planes en un solo lugar.'}</p></div>
         <form className="auth-form" onSubmit={submit}>
           <label><span><Mail size={15} /> Correo electronico</span><input name="email" type="email" autoComplete="email" placeholder="tu@email.com" required /></label>

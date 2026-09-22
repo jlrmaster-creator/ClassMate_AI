@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { ArrowRight, Check, GraduationCap, MapPin, UserRound, Flame, BookOpen, TrendingUp } from 'lucide-react'
+import { ArrowRight, Check, GraduationCap, MapPin, UserRound, Flame, BookOpen, TrendingUp, Pencil } from 'lucide-react'
 import type { UserProfile } from '../../types/userProfile'
 import type { Task } from '../../types/task'
 import { getRewardSummary } from '../../services/rewardService'
 import { computeStudyStats } from '../../services/statsService'
 import { STORE_ITEMS, ownsItem, type StoreCategory, type StoreItem } from '../../services/storeService'
+import { APP_VERSION } from '../../version'
 
 interface ProfileViewProps {
   profile: UserProfile
@@ -38,6 +39,8 @@ function formatMinutes(minutes: number): string {
 export default function ProfileView({ profile, tasks, onSave, onBuy, onUse }: ProfileViewProps) {
   const [draft, setDraft] = useState(profile)
   const [saved, setSaved] = useState(false)
+  const [editing, setEditing] = useState(!profile.nick && !profile.name)
+  const profileHasIdentity = Boolean(profile.nick || profile.name)
   const [storeError, setStoreError] = useState('')
   const rewards = getRewardSummary(tasks)
   const stats = computeStudyStats(tasks)
@@ -57,6 +60,7 @@ export default function ProfileView({ profile, tasks, onSave, onBuy, onUse }: Pr
     event.preventDefault()
     onSave(draft)
     setSaved(true)
+    setEditing(false)
   }
 
   function renderStoreSection(category: StoreCategory) {
@@ -99,17 +103,24 @@ export default function ProfileView({ profile, tasks, onSave, onBuy, onUse }: Pr
     <section className="profile-view">
       <div className="profile-heading">
         <div className={profile.avatar ? 'profile-avatar emoji' : 'profile-avatar'}>{profile.avatar || <UserRound size={27} />}</div>
-        <div><p className="section-kicker">Tu espacio personal</p><h2>Tu perfil {profile.badge ?? ''}</h2><p className="muted-copy">Personaliza cómo te acompaña ClassMate.</p></div>
+        <div>
+          <p className="section-kicker">Tu espacio personal</p>
+          {editing
+            ? <h2>Tu perfil {profile.badge ?? ''}</h2>
+            : <h2 className="profile-nick">{profile.nick || profile.name || 'Estudiante'} {profile.badge ?? ''}</h2>}
+          <p className="muted-copy">Personaliza cómo te acompaña ClassMate.</p>
+          {!editing && profileHasIdentity && <button className="profile-edit-button" onClick={() => setEditing(true)} aria-label="Editar perfil"><Pencil size={14} /> Editar perfil</button>}
+        </div>
       </div>
 
-      <form className="profile-form" onSubmit={submit}>
+      {editing && (<form className="profile-form" onSubmit={submit}>
         <label><span>Nombre completo</span><input value={draft.name} onChange={(event) => updateField('name', event.target.value)} placeholder="Ej. Alejandro López" autoComplete="name" /></label>
         <label><span>Nick o nombre corto</span><input value={draft.nick} onChange={(event) => updateField('nick', event.target.value)} placeholder="Ej. Alex" maxLength={30} /></label>
         <label><span><GraduationCap size={15} /> Curso</span><input value={draft.schoolYear} onChange={(event) => updateField('schoolYear', event.target.value)} placeholder="Ej. 3º ESO" /></label>
         <label><span><MapPin size={15} /> Colegio o instituto <small>opcional</small></span><input value={draft.school} onChange={(event) => updateField('school', event.target.value)} placeholder="Ej. IES Central" /></label>
         <button className="primary-button" type="submit">Guardar perfil <ArrowRight size={17} /></button>
         {saved && <p className="form-success" role="status"><Check size={15} /> Perfil guardado</p>}
-      </form>
+      </form>)}
 
       {/* ── STATS ── */}
       <section className="stats-panel" aria-labelledby="stats-title">
@@ -219,6 +230,7 @@ export default function ProfileView({ profile, tasks, onSave, onBuy, onUse }: Pr
       </section>
 
       <p className="profile-credit">Created by: José López - Romero Moraleda</p>
+      <p className="app-version">v{APP_VERSION}</p>
     </section>
   )
 }

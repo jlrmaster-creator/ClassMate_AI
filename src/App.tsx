@@ -428,15 +428,15 @@ function App({ userId, onLogout }: AppProps) {
             <div><p className="section-kicker">Tu lista completa</p><h2>Todas tus tareas</h2></div>
             <span className="time-total">{tasks.length} en total</span>
           </section>
+          <section className="quick-add">
+            <div><span className="section-kicker">Añade sin complicarte</span><h2>¿Qué tienes que hacer?</h2></div>
+            <button className="add-task-button" onClick={openNewTask} aria-label="Anadir tarea"><Plus size={22} /></button>
+          </section>
           <div className="task-list">
             {tasks.map((task) => renderTask(task, true))}
             {tasks.length === 0 && <div className="empty-state"><span><ListChecks size={24} /></span><h3>No tienes tareas</h3><p>Añade una para empezar a organizarte.</p></div>}
           </div>
           {tasks.length > 0 && <p className="tasks-retention"><Check size={15} /> Las tareas completadas seguirán aquí hasta que las elimines.</p>}
-          <section className="quick-add">
-            <div><span className="section-kicker">Añade sin complicarte</span><h2>¿Qué tienes que hacer?</h2></div>
-            <button className="add-task-button" onClick={openNewTask} aria-label="Anadir tarea"><Plus size={22} /></button>
-          </section>
 
           <ProjectsView userId={userId} projects={projects} onSave={saveProject} onDelete={deleteProject} onJoin={(code) => joinProjectByCode(userId, code)} />
         </section> : <>
