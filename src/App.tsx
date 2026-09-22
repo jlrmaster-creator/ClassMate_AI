@@ -325,11 +325,14 @@ function App({ userId, onLogout }: AppProps) {
   }
 
   function saveProject(project: Project) {
+    // Update FUNCIONAL: evita lost-update local cuando cambias el progreso rápido
+    // y el onSnapshot de proyectos llega con un valor previo (mismo patrón que los puntos).
     const isExisting = projects.some((item) => item.id === project.id)
-    const nextProjects = isExisting
-      ? projects.map((item) => item.id === project.id ? project : item)
-      : [...projects, project]
-    setProjects(nextProjects)
+    setProjects((current) => {
+      return current.some((item) => item.id === project.id)
+        ? current.map((item) => item.id === project.id ? project : item)
+        : [...current, project]
+    })
     
     if (isExisting) void updateCloudProject(userId, project)
     else void createCloudProject(userId, project)
@@ -396,7 +399,7 @@ function App({ userId, onLogout }: AppProps) {
       </header>
 
       <main className="content">
-        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} onBuy={buyStoreItem} onUse={applyStoreItem} /> : activeTab === 'Proyectos' ? <ProjectsView userId={userId} projects={projects} onSave={saveProject} onDelete={deleteProject} onJoin={(code) => joinProjectByCode(userId, code)} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} onBuy={buyStoreItem} onUse={applyStoreItem} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
@@ -434,6 +437,8 @@ function App({ userId, onLogout }: AppProps) {
             <div><span className="section-kicker">Añade sin complicarte</span><h2>¿Qué tienes que hacer?</h2></div>
             <button className="add-task-button" onClick={openNewTask} aria-label="Anadir tarea"><Plus size={22} /></button>
           </section>
+
+          <ProjectsView userId={userId} projects={projects} onSave={saveProject} onDelete={deleteProject} onJoin={(code) => joinProjectByCode(userId, code)} />
         </section> : <>
         <section className="section-heading">
           <div>
@@ -475,7 +480,6 @@ function App({ userId, onLogout }: AppProps) {
           { label: 'Horario', icon: Table },
           { label: 'Estudio', icon: Users },
           { label: 'Tareas', icon: ListChecks },
-          { label: 'Proyectos', icon: FolderKanban },
           { label: 'Calendario', icon: CalendarDays },
           { label: 'Perfil', icon: UserRound },
         ].map(({ label, icon: Icon }) => (
