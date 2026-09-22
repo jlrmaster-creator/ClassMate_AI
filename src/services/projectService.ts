@@ -6,7 +6,6 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
-  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
@@ -127,26 +126,28 @@ export async function createCloudProject(userId: string, project: Project): Prom
   const code = generateCode()
   const projectRef = doc(firestore, 'users', userId, 'projects', project.id)
 
-  const batch = writeBatch(firestore)
-  batch.set(projectRef, {
-    title: project.title,
-    description: project.description,
-    dueDate: project.dueDate,
-    progress: project.progress,
-    userId,
-    ownerId: userId,
-    code,
-    collaboratorIds: [],
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  })
-  batch.set(doc(firestore, 'projectCodes', code), {
-    projectId: project.id,
-    ownerId: userId,
-  })
-
+  // Dos escrituras SECUENCIALES (no batch): las reglas de Firestore no ven los
+  // documentos escritos dentro de un mismo batch (exists() falla SIEMPRE ahí),
+  // lo que hacía que crear un proyecto se denegara en silencio y «no apareciera».
+  // Al escribir primero el proyecto y luego el código, la regla exists() de
+  // projectCodes/{code} pasa incluso con reglas estrictas/antiguas desplegadas.
   try {
-    await batch.commit()
+    await setDoc(projectRef, {
+      title: project.title,
+      description: project.description,
+      dueDate: project.dueDate,
+      progress: project.progress,
+      userId,
+      ownerId: userId,
+      code,
+      collaboratorIds: [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+    await setDoc(doc(firestore, 'projectCodes', code), {
+      projectId: project.id,
+      ownerId: userId,
+    })
   } catch (error) {
     console.error('[projects] No se pudo crear el proyecto:', error)
     return null
