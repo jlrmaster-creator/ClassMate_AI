@@ -8,6 +8,10 @@ const emptyProfile: UserProfile = {
   schoolYear: '',
   school: '',
   totalPoints: 0,
+  avatar: '',
+  badge: '',
+  theme: '',
+  ownedItems: [],
 }
 
 export function subscribeToProfile(userId: string, onProfile: (profile: UserProfile) => void): Unsubscribe | null {

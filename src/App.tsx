@@ -31,6 +31,7 @@ import { subscribeToProjects, createCloudProject, updateCloudProject, deleteClou
 import { subscribeToTimetable, createCloudTimetableSlot, updateCloudTimetableSlot, deleteCloudTimetableSlot } from './services/timetableService'
 import { subscribeToProfile, updateCloudProfile } from './services/profileService'
 import { getRewardSummary, pointsForTask } from './services/rewardService'
+import { buyItem, useItem, type StoreItem } from './services/storeService'
 import { generateStudySessions } from './services/examService'
 import type { Project } from './types/project'
 import type { Task, TaskImportance, TaskPriority, TaskType } from './types/task'
@@ -95,6 +96,11 @@ function App({ userId, onLogout }: AppProps) {
   useEffect(() => subscribeToProjects(userId, setProjects) ?? undefined, [userId])
   useEffect(() => subscribeToTimetable(userId, setTimetable) ?? undefined, [userId])
   useEffect(() => subscribeToProfile(userId, setProfile) ?? undefined, [userId])
+
+  // Aplica el tema de color comprado en la tienda
+  useEffect(() => {
+    document.documentElement.dataset.theme = profile.theme || 'esmeralda'
+  }, [profile.theme])
 
   const pendingTasks = tasks.filter((task) => task.status === 'pending')
   const completedTasks = tasks.filter((task) => task.status === 'completed')
@@ -295,6 +301,19 @@ function App({ userId, onLogout }: AppProps) {
     void updateCloudProfile(userId, nextProfile)
   }
 
+  function buyStoreItem(item: StoreItem): string | null {
+    const result = buyItem(profile, item)
+    if (!result.ok || !result.profile) {
+      return result.message ?? 'No se pudo completar la compra.'
+    }
+    updateProfile(result.profile)
+    return null
+  }
+
+  function applyStoreItem(item: StoreItem) {
+    updateProfile(useItem(profile, item))
+  }
+
   function saveProject(project: Project) {
     const isExisting = projects.some((item) => item.id === project.id)
     const nextProjects = isExisting
@@ -367,11 +386,11 @@ function App({ userId, onLogout }: AppProps) {
       </header>
 
       <main className="content">
-        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView userId={userId} projects={projects} onSave={saveProject} onDelete={deleteProject} onJoin={(code) => joinProjectByCode(userId, code)} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} onBuy={buyStoreItem} onUse={applyStoreItem} /> : activeTab === 'Proyectos' ? <ProjectsView userId={userId} projects={projects} onSave={saveProject} onDelete={deleteProject} onJoin={(code) => joinProjectByCode(userId, code)} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-            <h1>Buenos dias{profile.nick ? `, ${profile.nick}` : ''} <span aria-hidden="true">👋</span></h1>
+            <h1>Buenos dias{profile.nick ? `, ${profile.nick}` : ''} {profile.badge && <span className="name-badge" aria-hidden="true">{profile.badge}</span>} <span aria-hidden="true">👋</span></h1>
             <p className="muted-copy">
               {pendingTasks.length > 0 ? `Tienes ${pendingTasks.length} cosas bajo control hoy.` : 'Estas al dia. Buen trabajo.'}
             </p>

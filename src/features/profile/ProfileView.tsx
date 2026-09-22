@@ -4,11 +4,28 @@ import type { UserProfile } from '../../types/userProfile'
 import type { Task } from '../../types/task'
 import { getRewardSummary } from '../../services/rewardService'
 import { computeStudyStats } from '../../services/statsService'
+import { STORE_ITEMS, ownsItem, type StoreCategory, type StoreItem } from '../../services/storeService'
 
 interface ProfileViewProps {
   profile: UserProfile
   tasks: Task[]
   onSave: (profile: UserProfile) => void
+  onBuy: (item: StoreItem) => string | null
+  onUse: (item: StoreItem) => void
+}
+
+const themePreviewColors: Record<string, string> = {
+  esmeralda: '#397a60',
+  marina: '#2f6eb3',
+  uva: '#7b4fa6',
+  fuego: '#bc5b2e',
+  rosa: '#d06a9c',
+}
+
+const categoryLabels: Record<StoreCategory, { icon: string; title: string }> = {
+  theme: { icon: '🎨', title: 'Temas de color' },
+  avatar: { icon: '🦸', title: 'Avatares' },
+  badge: { icon: '✨', title: 'Insignias junto a tu nombre' },
 }
 
 function formatMinutes(minutes: number): string {
@@ -18,13 +35,18 @@ function formatMinutes(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
-export default function ProfileView({ profile, tasks, onSave }: ProfileViewProps) {
+export default function ProfileView({ profile, tasks, onSave, onBuy, onUse }: ProfileViewProps) {
   const [draft, setDraft] = useState(profile)
   const [saved, setSaved] = useState(false)
+  const [storeError, setStoreError] = useState('')
   const rewards = getRewardSummary(tasks)
   const stats = computeStudyStats(tasks)
   // Access hidden _maxMinutes for bar widths
   const maxMinutes = (stats as ReturnType<typeof computeStudyStats> & { _maxMinutes: number })._maxMinutes || 1
+
+  const currentThemeName = STORE_ITEMS.find(
+    (item) => item.category === 'theme' && item.themeId === (profile.theme || 'esmeralda')
+  )?.name ?? 'Esmeralda'
 
   function updateField(field: keyof UserProfile, value: string) {
     setDraft((current) => ({ ...current, [field]: value }))
@@ -37,11 +59,47 @@ export default function ProfileView({ profile, tasks, onSave }: ProfileViewProps
     setSaved(true)
   }
 
+  function renderStoreSection(category: StoreCategory) {
+    const label = categoryLabels[category]
+    const items = STORE_ITEMS.filter((item) => item.category === category)
+    return (
+      <div className="store-section" key={category}>
+        <h3><span>{label.icon}</span>{label.title}</h3>
+        <div className="store-grid">
+          {items.map((item) => {
+            const owned = ownsItem(profile, item)
+            const isActive =
+              (category === 'theme' && profile.theme === item.themeId)
+              || (category === 'avatar' && profile.avatar === item.emoji)
+              || (category === 'badge' && profile.badge === item.emoji)
+            const affordable = (profile.totalPoints ?? 0) >= item.price
+            const preview = category === 'theme'
+              ? <span className="store-item-preview theme-dot" style={{ background: themePreviewColors[item.themeId ?? ''] }} />
+              : <span className="store-item-preview">{item.emoji}</span>
+            let button: React.ReactNode
+            if (owned) {
+              button = <button className="use" disabled={isActive} onClick={() => onUse(item)}>{isActive ? '✓ En uso' : 'Usar'}</button>
+            } else {
+              button = <button disabled={!affordable} onClick={() => setStoreError(onBuy(item) ?? '')}>{affordable ? `Comprar · ${item.price}` : `Faltan ${item.price - (profile.totalPoints ?? 0)}`}</button>
+            }
+            return (
+              <div className={`store-item ${isActive ? 'active' : ''}`} key={item.id}>
+                {preview}
+                <span className="store-item-name">{item.name}</span>
+                {button}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <section className="profile-view">
       <div className="profile-heading">
-        <div className="profile-avatar"><UserRound size={27} /></div>
-        <div><p className="section-kicker">Tu espacio personal</p><h2>Tu perfil</h2><p className="muted-copy">Personaliza cómo te acompaña ClassMate.</p></div>
+        <div className={profile.avatar ? 'profile-avatar emoji' : 'profile-avatar'}>{profile.avatar || <UserRound size={27} />}</div>
+        <div><p className="section-kicker">Tu espacio personal</p><h2>Tu perfil {profile.badge ?? ''}</h2><p className="muted-copy">Personaliza cómo te acompaña ClassMate.</p></div>
       </div>
 
       <form className="profile-form" onSubmit={submit}>
@@ -138,6 +196,26 @@ export default function ProfileView({ profile, tasks, onSave }: ProfileViewProps
           <div><strong>{rewards.dailyPoints}</strong><span>Puntos de hoy</span></div>
           <div><strong>{rewards.weeklyPoints}</strong><span>Puntos esta semana</span></div>
         </div>
+      </section>
+
+      {/* ── STORE ── */}
+      <section className="store-panel" aria-labelledby="store-title">
+        <div className="store-heading">
+          <div><p className="section-kicker">Gasta tus puntos</p><h2 id="store-title">Tienda</h2><p className="muted-copy">Canjea tus puntos por temas, avatares e insignias.</p></div>
+          <div className="store-balance"><strong>{profile.totalPoints ?? 0}</strong><span>puntos</span></div>
+        </div>
+
+        <div className="store-preview">
+          <span className="store-preview-avatar">{profile.avatar || '🎓'}</span>
+          <div className="store-preview-info">
+            <strong>{profile.nick || profile.name || 'Estudiante'} {profile.badge ?? ''}</strong>
+            <span>Tema activo: {currentThemeName}</span>
+          </div>
+        </div>
+
+        {(['theme', 'avatar', 'badge'] as StoreCategory[]).map((category) => renderStoreSection(category))}
+
+        {storeError && <p className="store-error" role="status">{storeError}</p>}
       </section>
 
       <p className="profile-credit">Created by: José López - Romero Moraleda</p>
