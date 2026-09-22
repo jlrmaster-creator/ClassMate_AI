@@ -18,6 +18,7 @@ import {
   Sparkles,
   Table,
   UserRound,
+  Users,
   X,
 } from 'lucide-react'
 import { subscribeToTasks, createCloudTask, updateCloudTask, deleteCloudTask } from './services/taskService'
@@ -25,6 +26,7 @@ import ProfileView from './features/profile/ProfileView'
 import ProjectsView from './features/projects/ProjectsView'
 import CalendarView from './features/calendar/CalendarView'
 import TimetableView from './features/timetable/TimetableView'
+import StudyRoomView from './features/study/StudyRoomView'
 import { subscribeToProjects, createCloudProject, updateCloudProject, deleteCloudProject } from './services/projectService'
 import { subscribeToTimetable, createCloudTimetableSlot, updateCloudTimetableSlot, deleteCloudTimetableSlot } from './services/timetableService'
 import { subscribeToProfile, updateCloudProfile } from './services/profileService'
@@ -70,6 +72,7 @@ function App({ userId, onLogout }: AppProps) {
   const [pomodoroMinutes, setPomodoroMinutes] = useState(15)
   const [pomodoroRemaining, setPomodoroRemaining] = useState(15 * 60)
   const [pomodoroRunning, setPomodoroRunning] = useState(false)
+  const [pomodoroSubject, setPomodoroSubject] = useState('')
   const [selectedMinutes, setSelectedMinutes] = useState<number | null>(() => {
     const saved = localStorage.getItem('classmate-planner-minutes')
     return saved ? JSON.parse(saved) : null
@@ -364,7 +367,7 @@ function App({ userId, onLogout }: AppProps) {
       </header>
 
       <main className="content">
-        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
@@ -441,6 +444,7 @@ function App({ userId, onLogout }: AppProps) {
         {[
           { label: 'Hoy', icon: Home },
           { label: 'Horario', icon: Table },
+          { label: 'Estudio', icon: Users },
           { label: 'Tareas', icon: ListChecks },
           { label: 'Proyectos', icon: FolderKanban },
           { label: 'Calendario', icon: CalendarDays },
@@ -472,6 +476,7 @@ function App({ userId, onLogout }: AppProps) {
           <p className="section-kicker">Temporizador de estudio</p>
           <h2>Pomodoro</h2>
           <p className="muted-copy">Concéntrate durante un tiempo y recibe una alarma al terminar.</p>
+          <input className="pomodoro-subject" value={pomodoroSubject} onChange={(e) => setPomodoroSubject(e.target.value)} placeholder="¿Qué vas a estudiar?" maxLength={60} />
           <div className="pomodoro-time">{formatPomodoroTime(pomodoroRemaining)}</div>
           <div className="pomodoro-options">{[15, 30, 60].map((minutes) => <button className={pomodoroMinutes === minutes ? 'selected' : ''} key={minutes} onClick={() => choosePomodoro(minutes)} disabled={pomodoroRunning}>{minutes === 60 ? '1 hora' : `${minutes} min`}</button>)}</div>
           <div className="pomodoro-actions"><button className="primary-button" onClick={pomodoroRunning ? () => setPomodoroRunning(false) : startPomodoro}>{pomodoroRunning ? 'Pausar' : pomodoroRemaining === 0 ? 'Empezar de nuevo' : 'Empezar sesión'} <Timer size={17} /></button><button className="pomodoro-reset" onClick={resetPomodoro}>Reiniciar</button></div>
