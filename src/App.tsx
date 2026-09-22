@@ -27,7 +27,7 @@ import ProjectsView from './features/projects/ProjectsView'
 import CalendarView from './features/calendar/CalendarView'
 import TimetableView from './features/timetable/TimetableView'
 import StudyRoomView from './features/study/StudyRoomView'
-import { subscribeToProjects, createCloudProject, updateCloudProject, deleteCloudProject } from './services/projectService'
+import { subscribeToProjects, createCloudProject, updateCloudProject, deleteCloudProject, joinProjectByCode } from './services/projectService'
 import { subscribeToTimetable, createCloudTimetableSlot, updateCloudTimetableSlot, deleteCloudTimetableSlot } from './services/timetableService'
 import { subscribeToProfile, updateCloudProfile } from './services/profileService'
 import { getRewardSummary, pointsForTask } from './services/rewardService'
@@ -306,10 +306,10 @@ function App({ userId, onLogout }: AppProps) {
     else void createCloudProject(userId, project)
   }
 
-  function deleteProject(projectId: string) {
-    const nextProjects = projects.filter((project) => project.id !== projectId)
+  function deleteProject(project: Project) {
+    const nextProjects = projects.filter((item) => item.id !== project.id)
     setProjects(nextProjects)
-    void deleteCloudProject(userId, projectId)
+    void deleteCloudProject(project.ownerId || userId, project.id)
   }
 
   function saveTimetableSlot(slot: TimetableSlot) {
@@ -367,7 +367,7 @@ function App({ userId, onLogout }: AppProps) {
       </header>
 
       <main className="content">
-        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView projects={projects} onSave={saveProject} onDelete={deleteProject} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} /> : activeTab === 'Proyectos' ? <ProjectsView userId={userId} projects={projects} onSave={saveProject} onDelete={deleteProject} onJoin={(code) => joinProjectByCode(userId, code)} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p>

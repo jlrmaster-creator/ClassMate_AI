@@ -4,7 +4,9 @@ export interface Project {
   description: string
   dueDate: string
   progress: number
-  sharedWith: string[]
+  code: string          // código de 6 caracteres para compartir, p.ej. "ABC123"
+  ownerId: string       // uid del propietario (dueño del documento)
+  collaboratorIds: string[] // uids de los compañeros con acceso al proyecto
   createdAt: string
   updatedAt: string
 }
