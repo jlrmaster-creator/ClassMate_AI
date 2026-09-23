@@ -14,6 +14,7 @@ import {
   ListChecks,
   LogOut,
   Plus,
+  Search,
   Share2,
   Sparkles,
   Table,
@@ -61,6 +62,29 @@ function formatDuration(minutes: number): string {
   return `${(minutes / 60).toString().replace('.', ',')} h`
 }
 
+/** Clave de día local (YYYY-MM-DD) para calcular la racha sin errores de zona horaria. */
+function dayKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** Días consecutivos (hasta hoy, o hasta ayer si hoy aún no hay actividad) con tareas completadas. */
+function computeStreak(tasks: Task[]): number {
+  const activeDays = new Set<string>()
+  tasks.forEach((task) => {
+    if (task.status === 'completed' && task.completedAt) {
+      activeDays.add(dayKey(new Date(task.completedAt)))
+    }
+  })
+  let streak = 0
+  const cursor = new Date()
+  if (!activeDays.has(dayKey(cursor))) cursor.setDate(cursor.getDate() - 1)
+  while (activeDays.has(dayKey(cursor))) {
+    streak += 1
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return streak
+}
+
 interface AppProps {
   userId: string
   onLogout: () => Promise<void>
@@ -91,6 +115,13 @@ function App({ userId, onLogout }: AppProps) {
     const saved = localStorage.getItem('classmate-school-days')
     return saved ? JSON.parse(saved) : [0, 1, 2, 3, 4]
   })
+  const [taskSearch, setTaskSearch] = useState('')
+  const [taskSubjectFilter, setTaskSubjectFilter] = useState('all')
+  const [taskStatusFilter, setTaskStatusFilter] = useState('all')
+  const [taskSort, setTaskSort] = useState<'score' | 'due' | 'title'>('score')
+  const [voiceDraft, setVoiceDraft] = useState('')
+  const [voiceListening, setVoiceListening] = useState(false)
+  const [voiceError, setVoiceError] = useState('')
 
   useEffect(() => subscribeToTasks(userId, setTasks) ?? undefined, [userId])
   useEffect(() => subscribeToProjects(userId, setProjects) ?? undefined, [userId])
@@ -113,6 +144,31 @@ function App({ userId, onLogout }: AppProps) {
   const recommendedTasks = pendingTasks
     .filter((task) => task.estimatedMinutes <= (selectedMinutes ?? Number.MAX_SAFE_INTEGER))
     .sort((first, second) => taskScore(second) - taskScore(first))
+
+  const activeStreak = computeStreak(tasks)
+  const rewardSummary = getRewardSummary(tasks)
+  const now = new Date()
+  const weekStart = new Date(now)
+  weekStart.setHours(0, 0, 0, 0)
+  weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+  const weekTasks = tasks.filter((task) => task.status === 'completed' && task.completedAt && new Date(task.completedAt) >= weekStart)
+  const weekMinutes = weekTasks.reduce((total, task) => total + task.estimatedMinutes, 0)
+  const focusTask = recommendedTasks[0] ?? null
+
+  const taskSubjects = Array.from(new Set(tasks.map((task) => task.subject))).sort()
+  const filteredTasks = tasks
+    .filter((task) => {
+      const query = taskSearch.trim().toLowerCase()
+      const matchesQuery = !query || task.title.toLowerCase().includes(query) || task.subject.toLowerCase().includes(query)
+      const matchesSubject = taskSubjectFilter === 'all' || task.subject === taskSubjectFilter
+      const matchesStatus = taskStatusFilter === 'all' || (taskStatusFilter === 'completed' ? task.status === 'completed' : task.status === 'pending')
+      return matchesQuery && matchesSubject && matchesStatus
+    })
+    .sort((first, second) => {
+      if (taskSort === 'due') return (first.dueDate || '9999').localeCompare(second.dueDate || '9999')
+      if (taskSort === 'title') return first.title.localeCompare(second.title)
+      return taskScore(second) - taskScore(first)
+    })
 
   function taskScore(task: Task): number {
     const priorityScore = { high: 30, medium: 20, low: 10 }[task.priority]
@@ -303,6 +359,64 @@ function App({ userId, onLogout }: AppProps) {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer')
   }
 
+  function startVoiceInput() {
+    type RecognitionLike = {
+      lang: string
+      interimResults: boolean
+      maxAlternatives: number
+      start: () => void
+      stop: () => void
+      onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+      onerror: (() => void) | null
+      onend: (() => void) | null
+    }
+    type RecognitionCtor = new () => RecognitionLike
+    const windowWithSpeech = window as Window & {
+      SpeechRecognition?: RecognitionCtor
+      webkitSpeechRecognition?: RecognitionCtor
+    }
+    const SpeechRecognition = windowWithSpeech.SpeechRecognition ?? windowWithSpeech.webkitSpeechRecognition
+
+    if (!SpeechRecognition) {
+      setVoiceError('Tu navegador no soporta dictado por voz. Prueba con Chrome o Edge.')
+      return
+    }
+
+    setVoiceError('')
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'es-ES'
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    setVoiceListening(true)
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript?.trim() ?? ''
+      setVoiceListening(false)
+      if (!transcript) {
+        setVoiceError('No te he entendido. Inténtalo otra vez.')
+        return
+      }
+      setVoiceDraft(transcript)
+      setEditingTask(null)
+      setNewTaskDueDate('')
+      setNewTaskSubject('')
+      setTaskFormType('task')
+      setShowTaskForm(true)
+    }
+    recognition.onerror = () => {
+      setVoiceListening(false)
+      setVoiceError('No se pudo capturar el audio.')
+    }
+    recognition.onend = () => setVoiceListening(false)
+
+    try {
+      recognition.start()
+    } catch {
+      setVoiceListening(false)
+      setVoiceError('No se pudo iniciar el micrófono.')
+    }
+  }
+
   function updateProfile(nextProfile: UserProfile) {
     setProfile(nextProfile)
     void updateCloudProfile(userId, nextProfile)
@@ -408,17 +522,30 @@ function App({ userId, onLogout }: AppProps) {
               {pendingTasks.length > 0 ? `Tienes ${pendingTasks.length} cosas bajo control hoy.` : 'Estas al dia. Buen trabajo.'}
             </p>
           </div>
-          <div className="streak" title="Dias activos esta semana">
-            <span>5</span>
-            <small>dias activos</small>
+          <div className="streak" title="Dias seguidos con tareas completadas">
+            <span>{activeStreak}</span>
+            <small>{activeStreak === 1 ? 'dia de racha' : 'dias de racha'}</small>
           </div>
+        </section>
+
+        <section className="week-stats" aria-label="Resumen de la semana">
+          <span className="week-stat"><strong>{weekTasks.length}</strong><small>tareas hechas</small></span>
+          <span className="week-stat"><strong>{formatDuration(weekMinutes)}</strong><small>de estudio</small></span>
+          <span className="week-stat"><strong>{rewardSummary.weeklyPoints} pts</strong><small>esta semana</small></span>
         </section>
 
         <section className="focus-banner">
           <div className="focus-icon"><Sparkles size={22} /></div>
           <div>
             <p className="focus-label">Tu siguiente mejor paso</p>
-            <p className="focus-text">Empieza por lo importante y deja espacio para respirar.</p>
+            {focusTask ? (
+              <>
+                <p className="focus-text"><strong>{focusTask.title}</strong> · {focusTask.subject}</p>
+                <p className="focus-sub">{formatDuration(focusTask.estimatedMinutes)} · {importanceLabels[focusTask.importance].toLowerCase()}</p>
+              </>
+            ) : (
+              <p className="focus-text">Estás al día. Descansa o adelanta trabajo.</p>
+            )}
           </div>
           <ArrowRight size={19} className="focus-arrow" />
         </section>
@@ -426,15 +553,32 @@ function App({ userId, onLogout }: AppProps) {
         {activeTab === 'Tareas' ? <section className="tasks-view">
           <section className="section-heading">
             <div><p className="section-kicker">Tu lista completa</p><h2>Todas tus tareas</h2></div>
-            <span className="time-total">{tasks.length} en total</span>
+            <span className="time-total">{filteredTasks.length} de {tasks.length}</span>
           </section>
+          <div className="task-filters" role="search">
+            <label className="task-search"><Search size={15} /><input value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} placeholder="Buscar tarea…" aria-label="Buscar tarea" /></label>
+            <select value={taskSubjectFilter} onChange={(event) => setTaskSubjectFilter(event.target.value)} aria-label="Filtrar por asignatura">
+              <option value="all">Todas las asignaturas</option>
+              {taskSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+            </select>
+            <select value={taskStatusFilter} onChange={(event) => setTaskStatusFilter(event.target.value)} aria-label="Filtrar por estado">
+              <option value="all">Todas</option>
+              <option value="pending">Pendientes</option>
+              <option value="completed">Completadas</option>
+            </select>
+            <select value={taskSort} onChange={(event) => setTaskSort(event.target.value as 'score' | 'due' | 'title')} aria-label="Ordenar tareas">
+              <option value="score">Por prioridad</option>
+              <option value="due">Por fecha</option>
+              <option value="title">Por nombre</option>
+            </select>
+          </div>
           <section className="quick-add">
             <div><span className="section-kicker">Añade sin complicarte</span><h2>¿Qué tienes que hacer?</h2></div>
             <button className="add-task-button" onClick={openNewTask} aria-label="Anadir tarea"><Plus size={22} /></button>
           </section>
           <div className="task-list">
-            {tasks.map((task) => renderTask(task, true))}
-            {tasks.length === 0 && <div className="empty-state"><span><ListChecks size={24} /></span><h3>No tienes tareas</h3><p>Añade una para empezar a organizarte.</p></div>}
+            {filteredTasks.map((task) => renderTask(task, true))}
+            {filteredTasks.length === 0 && <div className="empty-state"><span><ListChecks size={24} /></span><h3>{tasks.length === 0 ? 'No tienes tareas' : 'Nada coincide'}</h3><p>{tasks.length === 0 ? 'Añade una para empezar a organizarte.' : 'Prueba a cambiar el filtro o la búsqueda.'}</p></div>}
           </div>
           {tasks.length > 0 && <p className="tasks-retention"><Check size={15} /> Las tareas completadas seguirán aquí hasta que las elimines.</p>}
 
@@ -466,10 +610,11 @@ function App({ userId, onLogout }: AppProps) {
         </section>
         <div className="input-options">
           <button onClick={openNewTask}><ListChecks size={18} /> Escribir</button>
-          <button disabled><span>◌</span> Hablar</button>
+          <button onClick={startVoiceInput} aria-label="Crear tarea por voz"><span>◌</span> {voiceListening ? 'Escuchando…' : 'Hablar'}</button>
           <button disabled><BookOpen size={18} /> Foto</button>
           <button disabled><FolderKanban size={18} /> Documento</button>
         </div>
+        {voiceError && <p className="voice-error" role="alert">{voiceError}</p>}
         </>}
         </>}
       </main>
@@ -534,7 +679,7 @@ function App({ userId, onLogout }: AppProps) {
           <h2>{editingTask ? 'Actualiza tu tarea' : taskFormType === 'exam' ? '¿Cuándo es el examen?' : 'Vamos a apuntarla'}</h2>
 
           <label>Asignatura<input name="subject" defaultValue={editingTask?.subject ?? newTaskSubject} placeholder="Ej. Historia" required autoFocus /></label>
-          <label>{taskFormType === 'exam' ? 'Nombre del examen' : '¿Qué tienes que hacer?'}<input name="title" defaultValue={editingTask?.title} placeholder={taskFormType === 'exam' ? 'Ej. Examen Tema 4-6' : 'Ej. Leer el capítulo 4'} required /></label>
+          <label>{taskFormType === 'exam' ? 'Nombre del examen' : '¿Qué tienes que hacer?'}<input name="title" defaultValue={editingTask?.title ?? voiceDraft} placeholder={taskFormType === 'exam' ? 'Ej. Examen Tema 4-6' : 'Ej. Leer el capítulo 4'} required /></label>
 
           {taskFormType === 'exam' && (
             <label>
