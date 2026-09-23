@@ -1,8 +1,8 @@
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   serverTimestamp,
   setDoc,
@@ -46,23 +46,44 @@ export async function createCloudTask(userId: string, task: Task): Promise<strin
   const tasksCollection = userTasksCollection(userId)
   if (!tasksCollection) return null
   const { id, ...taskData } = task
-  const taskReference = await addDoc(tasksCollection, {
+  // Usa el id LOCAL de la tarea (crypto.randomUUID) como id del documento: así los updates/toggles
+  // posteriores (que usan ese mismo id) siempre aciertan. Antes se usaba addDoc, que generaba un
+  // id distinto en Firestore: completar/edit recién creada fallaba en silencio (doc inexistente).
+  const taskRef = doc(tasksCollection, id)
+  await setDoc(taskRef, {
     ...taskData,
     userId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  return taskReference.id
+  return id
 }
 
 export async function updateCloudTask(userId: string, task: Task): Promise<void> {
   if (!db) return
   const { id, ...taskData } = task
-  await setDoc(doc(db, 'users', userId, 'tasks', id), {
-    ...taskData,
-    userId,
-    updatedAt: serverTimestamp(),
-  }, { merge: true })
+  const taskRef = doc(db, 'users', userId, 'tasks', id)
+  try {
+    await setDoc(taskRef, {
+      ...taskData,
+      userId,
+      updatedAt: serverTimestamp(),
+    }, { merge: true })
+  } catch (error) {
+    // Si el doc aun no existe (p.ej. tarea creada por una version antigua sin createdAt, o se completa
+    // justo al crearla), el setDoc-merge se evalua como un `create` y las reglas lo deniegan en silencio
+    // por falta de createdAt. Lo creamos completo para que el completado/editado NUNCA se pierda.
+    console.error('[tasks] No se pudo actualizar la tarea, recreando el doc completo:', error)
+    const existing = await getDoc(taskRef)
+    if (!existing.exists()) {
+      await setDoc(taskRef, {
+        ...taskData,
+        userId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    }
+  }
 }
 
 export async function deleteCloudTask(userId: string, taskId: string): Promise<void> {

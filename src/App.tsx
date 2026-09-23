@@ -32,7 +32,7 @@ import TimetableView from './features/timetable/TimetableView'
 import StudyRoomView from './features/study/StudyRoomView'
 import { subscribeToProjects, createCloudProject, updateCloudProject, deleteCloudProject, joinProjectByCode } from './services/projectService'
 import { subscribeToTimetable, createCloudTimetableSlot, updateCloudTimetableSlot, deleteCloudTimetableSlot } from './services/timetableService'
-import { subscribeToProfile, updateCloudProfile, ensureCloudProfile, awardCloudPoints } from './services/profileService'
+import { subscribeToProfile, updateCloudProfile, ensureCloudProfile, awardCloudPoints, purchaseCloudItem } from './services/profileService'
 import { getRewardSummary, pointsForTask } from './services/rewardService'
 import { calibratedMinutes, recordActualMinutes } from './services/calibrationService'
 import { buyItem, useItem, type StoreItem } from './services/storeService'
@@ -528,9 +528,10 @@ function App({ userId, onLogout }: AppProps) {
     if (!result.ok || !result.profile) {
       return result.message ?? 'No se pudo completar la compra.'
     }
-    // Descuento ATOMICO (increment negativo) + estado funcional local para evitar lost-updates
-    // al comprar rápido; el saldo real siempre llega vía onSnapshot.
-    awardCloudPoints(userId, -item.price)
+    // Compra ATOMICA en la nube (descuenta puntos + registra el artículo + aplica tema/avatar/insignia)
+    // para que persista entre sesiones; el estado local se actualiza al instante y el saldo real
+    // siempre llega vía onSnapshot.
+    void purchaseCloudItem(userId, item)
     setProfile((current) => buyItem(current, item).profile ?? current)
     return null
   }
