@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { subscribeToTasks, createCloudTask, updateCloudTask, deleteCloudTask } from './services/taskService'
 import ProfileView from './features/profile/ProfileView'
+import PhotoView from './features/photo/PhotoView'
 import ProjectsView from './features/projects/ProjectsView'
 import CalendarView from './features/calendar/CalendarView'
 import TimetableView from './features/timetable/TimetableView'
@@ -122,6 +123,7 @@ function App({ userId, onLogout }: AppProps) {
   const [voiceDraft, setVoiceDraft] = useState('')
   const [voiceListening, setVoiceListening] = useState(false)
   const [voiceError, setVoiceError] = useState('')
+  const [showPhoto, setShowPhoto] = useState(false)
 
   useEffect(() => subscribeToTasks(userId, setTasks) ?? undefined, [userId])
   useEffect(() => subscribeToProjects(userId, setProjects) ?? undefined, [userId])
@@ -417,6 +419,22 @@ function App({ userId, onLogout }: AppProps) {
     }
   }
 
+  function createTasksFromPhoto(titles: string[], subject: string, minutes: number) {
+    const newTasks: Task[] = titles.map((title) => ({
+      id: crypto.randomUUID(),
+      type: 'task',
+      title,
+      subject,
+      estimatedMinutes: minutes,
+      priority: 'medium',
+      importance: 'normal',
+      status: 'pending',
+    }))
+    setTasks([...tasks, ...newTasks])
+    newTasks.forEach((task) => void createCloudTask(userId, task))
+    setShowPhoto(false)
+  }
+
   function updateProfile(nextProfile: UserProfile) {
     setProfile(nextProfile)
     void updateCloudProfile(userId, nextProfile)
@@ -611,7 +629,7 @@ function App({ userId, onLogout }: AppProps) {
         <div className="input-options">
           <button onClick={openNewTask}><ListChecks size={18} /> Escribir</button>
           <button onClick={startVoiceInput} aria-label="Crear tarea por voz"><span>◌</span> {voiceListening ? 'Escuchando…' : 'Hablar'}</button>
-          <button disabled><BookOpen size={18} /> Foto</button>
+          <button onClick={() => setShowPhoto(true)}><BookOpen size={18} /> Foto</button>
           <button disabled><FolderKanban size={18} /> Documento</button>
         </div>
         {voiceError && <p className="voice-error" role="alert">{voiceError}</p>}
@@ -699,6 +717,10 @@ function App({ userId, onLogout }: AppProps) {
 
           <button className="primary-button" type="submit">{taskFormType === 'exam' ? 'Planificar examen' : 'Guardar tarea'} <ArrowRight size={17} /></button>
         </form>
+      </div>}
+
+      {showPhoto && <div className="modal-backdrop" onClick={() => setShowPhoto(false)}>
+        <PhotoView subjects={taskSubjects} onClose={() => setShowPhoto(false)} onCreateTasks={createTasksFromPhoto} />
       </div>}
     </div>
   )
