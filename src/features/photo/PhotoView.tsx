@@ -99,37 +99,64 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
     setOcrLabel('Preparando documento…')
     setProgress(0)
     setError('')
+    let worker: import('tesseract.js').Worker | null = null
     try {
       const pdfjs = await import('pdfjs-dist')
       pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
       const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise
       const totalPages = pdf.numPages
-      const { createWorker } = await import('tesseract.js')
-      const worker = await createWorker('spa')
       let fullText = ''
 
       for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
-        setOcrLabel(`Página ${pageNumber} de ${totalPages}`)
         setProgress((pageNumber - 1) / totalPages)
         const page = await pdf.getPage(pageNumber)
-        const base = page.getViewport({ scale: 1 })
-        // Escala adaptativa: objetivo ~2000px de ancho, sin pasar de 3x
-        const scale = Math.min(3, Math.max(1.5, 2000 / base.width))
-        const viewport = page.getViewport({ scale })
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.floor(viewport.width)
-        canvas.height = Math.floor(viewport.height)
-        await page.render({ canvas, viewport }).promise
-        const { data } = await worker.recognize(canvas.toDataURL('image/jpeg', 0.9))
-        fullText += `\n${data.text ?? ''}`
+
+        // 1) Texto integrado (PDFs digitales): rapido y exacto, sin OCR.
+        const textContent = await page.getTextContent()
+        const embeddedItems: Array<{ str: string; hasEOL: boolean }> = []
+        textContent.items.forEach((item) => {
+          if ('str' in item && typeof item.str === 'string' && item.str.trim().length > 0) {
+            embeddedItems.push({ str: item.str, hasEOL: 'hasEOL' in item && item.hasEOL === true })
+          }
+        })
+        const embedded = embeddedItems
+          .map((item) => item.str + (item.hasEOL ? '\n' : ' '))
+          .join('')
+          .replace(/ +/g, ' ')
+          .trim()
+        const meaningfulChars = embedded.replace(/\s/g, '').length
+
+        setOcrLabel(`Página ${pageNumber} de ${totalPages} · ${meaningfulChars >= 20 ? 'texto integrado' : 'reconociendo…'}`)
+
+        if (meaningfulChars >= 20) {
+          // Página con texto digital real: la usamos tal cual.
+          fullText += `\n${embedded}`
+        } else {
+          // 2) Escaneo/imagen: OCR como respaldo (solo si hace falta).
+          if (!worker) {
+            const { createWorker } = await import('tesseract.js')
+            worker = await createWorker('spa')
+          }
+          const base = page.getViewport({ scale: 1 })
+          // Escala adaptativa: objetivo ~2000px de ancho, sin pasar de 3x
+          const scale = Math.min(3, Math.max(1.5, 2000 / base.width))
+          const viewport = page.getViewport({ scale })
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.floor(viewport.width)
+          canvas.height = Math.floor(viewport.height)
+          await page.render({ canvas, viewport }).promise
+          const { data } = await worker.recognize(canvas.toDataURL('image/jpeg', 0.9))
+          fullText += `\n${data.text ?? ''}`
+        }
         setProgress(pageNumber / totalPages)
       }
 
-      await worker.terminate()
+      if (worker) await worker.terminate()
       await pdf.cleanup()
       setOcrLabel('')
       finishOcr(fullText)
     } catch (err) {
+      if (worker) await worker.terminate().catch(() => undefined)
       console.error('[photo] OCR PDF fallo:', err)
       setStage('pick')
       setError('No se pudo leer el documento. Asegúrate de que el PDF tiene texto o escaneos legibles.')
@@ -217,7 +244,7 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
           <span className="modal-symbol"><ScanLine size={22} /></span>
           <p className="section-kicker">Desde tu cuaderno o apuntes</p>
           <h2>Foto, imagen o PDF</h2>
-          <p className="muted-copy">Haz una foto a tu cuaderno o sube un documento, y la app leerá el texto con OCR (Tesseract.js + PDF.js, open source) para crear las tareas.</p>
+          <p className="muted-copy">Haz una foto a tu cuaderno o sube un documento. Si el PDF tiene texto digital se extrae al instante; si es un escaneo, se lee con OCR (Tesseract.js + PDF.js, open source).</p>
           {error && <p className="voice-error" role="alert">{error}</p>}
           <div className="photo-grid">
             <button type="button" onClick={() => void openCamera()}><Camera size={22} /> Abrir cámara</button>
