@@ -5,4 +5,5 @@ export interface TimetableSlot {
   endTime: string   // "09:00"
   subject: string
   color: string     // "priority-high", "priority-medium", "priority-low" (we can reuse these classes or add new ones)
+  isExtracurricular?: boolean // true = actividad extraescolar (fuera de las clases)
 }

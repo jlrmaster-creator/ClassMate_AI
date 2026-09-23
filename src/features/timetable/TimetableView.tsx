@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, Check, Copy, Clock3, Edit3, ListChecks, LogIn, Plus, Share2, X } from 'lucide-react'
+import { ArrowRight, Check, Copy, Clock3, Edit3, ListChecks, LogIn, Palette, Plus, Share2, X } from 'lucide-react'
 import type { TimetableSlot } from '../../types/timetable'
 import { fetchTimetableShare, publishTimetableShare } from '../../services/timetableService'
 
@@ -17,6 +17,7 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
   const [activeDay, setActiveDay] = useState(new Date().getDay() >= 1 && new Date().getDay() <= 5 ? new Date().getDay() - 1 : 0)
   const [showForm, setShowForm] = useState(false)
   const [editingSlot, setEditingSlot] = useState<TimetableSlot | null>(null)
+  const [newSlotExtra, setNewSlotExtra] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [shareCode, setShareCode] = useState('')
   const [sharing, setSharing] = useState(false)
@@ -31,8 +32,12 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
     .filter((s) => s.dayOfWeek === activeDay)
     .sort((a, b) => a.startTime.localeCompare(b.startTime))
 
-  function openNewSlot() {
+  const classSlots = currentSlots.filter((slot) => !slot.isExtracurricular)
+  const extraSlots = currentSlots.filter((slot) => slot.isExtracurricular)
+
+  function openNewSlot(preExtra = false) {
     setEditingSlot(null)
+    setNewSlotExtra(preExtra)
     setShowForm(true)
   }
 
@@ -48,6 +53,7 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
     const startTime = String(formData.get('startTime') ?? '')
     const endTime = String(formData.get('endTime') ?? '')
     const color = String(formData.get('color') ?? 'priority-medium')
+    const isExtracurricular = formData.get('isExtracurricular') === 'on'
 
     if (!subject || !startTime || !endTime) return
 
@@ -58,6 +64,7 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
       startTime,
       endTime,
       color,
+      isExtracurricular,
     })
     setShowForm(false)
     setEditingSlot(null)
@@ -118,7 +125,8 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="add-task-button" onClick={() => setShowJoin(true)} aria-label="Unirse a un horario compartido por código" title="Usar código de otro horario"><LogIn size={20} /></button>
           <button className="add-task-button" onClick={openShare} aria-label="Compartir horario por código" title="Compartir horario"><Share2 size={20} /></button>
-          <button className="add-task-button" onClick={openNewSlot} aria-label="Añadir clase">
+          <button className="add-task-button" onClick={() => openNewSlot(true)} aria-label="Añadir extraescolar" title="Añadir extraescolar"><Palette size={20} /></button>
+          <button className="add-task-button" onClick={() => openNewSlot(false)} aria-label="Añadir clase">
             <Plus size={22} />
           </button>
         </div>
@@ -141,32 +149,63 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
           <div className="empty-state">
             <span><Clock3 size={24} /></span>
             <h3>Día libre</h3>
-            <p>No tienes clases registradas para este día.</p>
-            <button onClick={openNewSlot} className="secondary-button" style={{ marginTop: '1rem' }}>Añadir clase</button>
+            <p>No tienes clases ni extraescolares registradas para este día.</p>
+            <button onClick={() => openNewSlot(false)} className="secondary-button" style={{ marginTop: '1rem' }}>Añadir clase</button>
           </div>
         ) : (
-          currentSlots.map((slot) => (
-            <article className={`slot-item ${slot.color}`} key={slot.id}>
-              <div className="slot-time">
-                <strong>{slot.startTime}</strong>
-                <span>{slot.endTime}</span>
-              </div>
-              <div className="slot-body">
-                <h3>{slot.subject}</h3>
-                <div className="slot-actions">
-                  <button onClick={() => onCreateTaskForSubject(slot.subject)} aria-label="Añadir tarea">
-                    <ListChecks size={16} /> Tarea
-                  </button>
-                  <button onClick={() => openEditSlot(slot)} aria-label="Editar">
-                    <Edit3 size={16} />
-                  </button>
-                  <button onClick={() => onDeleteSlot(slot.id)} aria-label="Eliminar">
-                    <X size={16} />
-                  </button>
+          <>
+            {classSlots.map((slot) => (
+              <article className={`slot-item ${slot.color}`} key={slot.id}>
+                <div className="slot-time">
+                  <strong>{slot.startTime}</strong>
+                  <span>{slot.endTime}</span>
                 </div>
+                <div className="slot-body">
+                  <h3>{slot.subject}</h3>
+                  <div className="slot-actions">
+                    <button onClick={() => onCreateTaskForSubject(slot.subject)} aria-label="Añadir tarea">
+                      <ListChecks size={16} /> Tarea
+                    </button>
+                    <button onClick={() => openEditSlot(slot)} aria-label="Editar">
+                      <Edit3 size={16} />
+                    </button>
+                    <button onClick={() => onDeleteSlot(slot.id)} aria-label="Eliminar">
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+
+            {extraSlots.length > 0 && (
+              <div className="extra-section">
+                <p className="extra-heading"><Palette size={14} /> Extraescolares</p>
+                {extraSlots.map((slot) => (
+                  <article className={`slot-item slot-extra ${slot.color}`} key={slot.id}>
+                    <div className="slot-time">
+                      <strong>{slot.startTime}</strong>
+                      <span>{slot.endTime}</span>
+                    </div>
+                    <div className="slot-body">
+                      <h3>{slot.subject}</h3>
+                      <span className="extra-badge">Extraescolar</span>
+                      <div className="slot-actions">
+                        <button onClick={() => onCreateTaskForSubject(slot.subject)} aria-label="Añadir tarea">
+                          <ListChecks size={16} /> Tarea
+                        </button>
+                        <button onClick={() => openEditSlot(slot)} aria-label="Editar">
+                          <Edit3 size={16} />
+                        </button>
+                        <button onClick={() => onDeleteSlot(slot.id)} aria-label="Eliminar">
+                          <X size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
               </div>
-            </article>
-          ))
+            )}
+          </>
         )}
       </div>
 
@@ -176,12 +215,12 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
             <button type="button" className="modal-close" onClick={() => setShowForm(false)}>
               <X size={19} />
             </button>
-            <p className="section-kicker">{editingSlot ? 'Editar clase' : 'Nueva clase'}</p>
+            <p className="section-kicker">{editingSlot ? 'Editar' : newSlotExtra ? 'Nueva extraescolar' : 'Nueva clase'}</p>
             <h2>{DAYS[activeDay]}</h2>
             
             <label>
-              Asignatura
-              <input name="subject" defaultValue={editingSlot?.subject} placeholder="Ej. Matemáticas" required autoFocus />
+              {newSlotExtra ? 'Actividad' : 'Asignatura'}
+              <input name="subject" defaultValue={editingSlot?.subject} placeholder={newSlotExtra ? 'Ej. Natación, Piano…' : 'Ej. Matemáticas'} required autoFocus />
             </label>
             
             <div className="time-inputs">
@@ -195,6 +234,11 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
               </label>
             </div>
 
+            <label className="extra-check">
+              <input type="checkbox" name="isExtracurricular" defaultChecked={editingSlot?.isExtracurricular ?? newSlotExtra} />
+              <span>Es una extraescolar <small>(se muestra debajo de las clases)</small></span>
+            </label>
+
             <label>
               Color
               <select name="color" defaultValue={editingSlot?.color ?? 'priority-medium'}>
@@ -205,7 +249,7 @@ export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot,
             </label>
 
             <button className="primary-button" type="submit">
-              Guardar clase <ArrowRight size={17} />
+              Guardar {newSlotExtra ? 'extraescolar' : 'clase'} <ArrowRight size={17} />
             </button>
           </form>
         </div>

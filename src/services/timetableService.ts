@@ -18,6 +18,7 @@ export interface ShareSlot {
   endTime: string
   subject: string
   color: string
+  isExtracurricular?: boolean
 }
 
 const SHARE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -39,6 +40,7 @@ function slotFromDocument(id: string, data: Record<string, unknown>): TimetableS
     endTime: String(data.endTime ?? '09:00'),
     subject: String(data.subject ?? ''),
     color: String(data.color ?? 'priority-medium'),
+    isExtracurricular: Boolean(data.isExtracurricular),
   }
 }
 
@@ -125,6 +127,7 @@ export async function fetchTimetableShare(code: string): Promise<TimetableSlot[]
       endTime: String(slot.endTime ?? '09:00'),
       subject: String(slot.subject ?? ''),
       color: String(slot.color ?? 'priority-medium'),
+      isExtracurricular: Boolean(slot.isExtracurricular),
     }))
   } catch (error) {
     console.error('[timetable] No se pudo leer el horario compartido:', error)
