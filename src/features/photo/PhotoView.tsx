@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, Camera, Check, FileUp, Loader2, ScanLine, X } from 'lucide-react'
+import { ArrowRight, Camera, Check, FileUp, FileText, Loader2, ScanLine, X } from 'lucide-react'
+// Worker de PDF.js como asset: solo se descarga cuando se procesa un documento
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 interface PhotoViewProps {
   subjects: string[]
@@ -10,13 +12,14 @@ interface PhotoViewProps {
 type Stage = 'pick' | 'camera' | 'ocr' | 'review'
 
 /**
- * Convierte una foto del cuaderno en tareas usando OCR en el navegador
- * (Tesseract.js, open source). Flujo: cámara/archivo -> OCR -> revisar y
- * seleccionar líneas -> crear tareas.
+ * Convierte una foto del cuaderno o un PDF en tareas usando OCR en el navegador
+ * (Tesseract.js + PDF.js, open source). Flujo: cámara/imagen/PDF -> OCR ->
+ * revisar y seleccionar lineas -> crear tareas.
  */
 export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoViewProps) {
   const [stage, setStage] = useState<Stage>('pick')
   const [image, setImage] = useState<string>('')
+  const [ocrLabel, setOcrLabel] = useState('')
   const [rawText, setRawText] = useState('')
   const [lines, setLines] = useState<string[]>([])
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -27,7 +30,8 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const imageFileRef = useRef<HTMLInputElement>(null)
+  const pdfFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (stage !== 'camera' || !videoRef.current || !streamRef.current) return undefined
@@ -38,7 +42,7 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
     }
   }, [stage])
 
-  /** Divide el texto OCR en lineas-tarea plausibles (quita viñetas/números y duplicados). */
+  /** Divide el texto OCR en lineas-tarea plausibles (quita viñetas/numeros y duplicados). */
   function parseLines(text: string): string[] {
     const seen = new Set<string>()
     return text
@@ -57,8 +61,19 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
       .slice(0, 40)
   }
 
-  async function runOcr(dataUrl: string) {
+  /** Pasa el texto OCR a la fase de revision (recalcula lineas y seleccion). */
+  function finishOcr(text: string) {
+    const cleaned = String(text ?? '').trim()
+    setRawText(cleaned)
+    const parsed = parseLines(cleaned)
+    setLines(parsed)
+    setSelected(new Set(parsed.map((_, index) => index)))
+    setStage('review')
+  }
+
+  async function runOcrImage(dataUrl: string) {
     setStage('ocr')
+    setOcrLabel('')
     setProgress(0)
     setError('')
     try {
@@ -71,17 +86,53 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
       })
       const { data } = await worker.recognize(dataUrl)
       await worker.terminate()
-
-      const text = String(data.text ?? '').trim()
-      setRawText(text)
-      const parsed = parseLines(text)
-      setLines(parsed)
-      setSelected(new Set(parsed.map((_, index) => index)))
-      setStage('review')
+      finishOcr(String(data.text ?? ''))
     } catch (err) {
       console.error('[photo] OCR fallo:', err)
       setStage('pick')
       setError('No se pudo leer el texto. Prueba con una foto más nítida y con buena luz.')
+    }
+  }
+
+  async function runOcrPdf(file: File) {
+    setStage('ocr')
+    setOcrLabel('Preparando documento…')
+    setProgress(0)
+    setError('')
+    try {
+      const pdfjs = await import('pdfjs-dist')
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise
+      const totalPages = pdf.numPages
+      const { createWorker } = await import('tesseract.js')
+      const worker = await createWorker('spa')
+      let fullText = ''
+
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
+        setOcrLabel(`Página ${pageNumber} de ${totalPages}`)
+        setProgress((pageNumber - 1) / totalPages)
+        const page = await pdf.getPage(pageNumber)
+        const base = page.getViewport({ scale: 1 })
+        // Escala adaptativa: objetivo ~2000px de ancho, sin pasar de 3x
+        const scale = Math.min(3, Math.max(1.5, 2000 / base.width))
+        const viewport = page.getViewport({ scale })
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.floor(viewport.width)
+        canvas.height = Math.floor(viewport.height)
+        await page.render({ canvas, viewport }).promise
+        const { data } = await worker.recognize(canvas.toDataURL('image/jpeg', 0.9))
+        fullText += `\n${data.text ?? ''}`
+        setProgress(pageNumber / totalPages)
+      }
+
+      await worker.terminate()
+      await pdf.cleanup()
+      setOcrLabel('')
+      finishOcr(fullText)
+    } catch (err) {
+      console.error('[photo] OCR PDF fallo:', err)
+      setStage('pick')
+      setError('No se pudo leer el documento. Asegúrate de que el PDF tiene texto o escaneos legibles.')
     }
   }
 
@@ -109,19 +160,26 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
     setImage(dataUrl)
-    void runOcr(dataUrl)
+    void runOcrImage(dataUrl)
   }
 
-  function onFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
+  function onImageSelected(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
       const dataUrl = String(reader.result)
       setImage(dataUrl)
-      void runOcr(dataUrl)
+      void runOcrImage(dataUrl)
     }
     reader.readAsDataURL(file)
+    event.target.value = ''
+  }
+
+  function onPdfSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    void runOcrPdf(file)
     event.target.value = ''
   }
 
@@ -148,6 +206,7 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
   }
 
   const selectedCount = lines.filter((_, index) => selected.has(index)).length
+  const progressPercent = Math.round(progress * 100)
 
   return (
     <section className="modal photo-modal" onClick={(event) => event.stopPropagation()}>
@@ -156,15 +215,17 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
       {stage === 'pick' && (
         <>
           <span className="modal-symbol"><ScanLine size={22} /></span>
-          <p className="section-kicker">Desde tu cuaderno</p>
-          <h2>Foto a las notas</h2>
-          <p className="muted-copy">Haz una foto a tu cuaderno o pizarra y la app leerá el texto con OCR (Tesseract.js, open source) para crear las tareas.</p>
+          <p className="section-kicker">Desde tu cuaderno o apuntes</p>
+          <h2>Foto, imagen o PDF</h2>
+          <p className="muted-copy">Haz una foto a tu cuaderno o sube un documento, y la app leerá el texto con OCR (Tesseract.js + PDF.js, open source) para crear las tareas.</p>
           {error && <p className="voice-error" role="alert">{error}</p>}
           <div className="photo-grid">
             <button type="button" onClick={() => void openCamera()}><Camera size={22} /> Abrir cámara</button>
-            <button type="button" onClick={() => fileRef.current?.click()}><FileUp size={22} /> Subir imagen</button>
+            <button type="button" onClick={() => imageFileRef.current?.click()}><FileUp size={22} /> Subir imagen</button>
+            <button type="button" onClick={() => pdfFileRef.current?.click()}><FileText size={22} /> Subir PDF</button>
           </div>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={onFileSelected} />
+          <input ref={imageFileRef} type="file" accept="image/*" capture="environment" hidden onChange={onImageSelected} />
+          <input ref={pdfFileRef} type="file" accept="application/pdf" hidden onChange={onPdfSelected} />
         </>
       )}
 
@@ -184,11 +245,11 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
       {stage === 'ocr' && (
         <>
           <span className="modal-symbol"><Loader2 size={22} className="photo-spin" /></span>
-          <p className="section-kicker">Leyendo la foto</p>
-          <h2>Un momento…</h2>
+          <p className="section-kicker">Leyendo</p>
+          <h2>{ocrLabel || 'Un momento…'}</h2>
           {image && <img className="photo-preview" src={image} alt="Foto capturada" />}
-          <div className="photo-progress" aria-hidden="true"><span style={{ width: `${Math.round(progress * 100)}%` }} /></div>
-          <p className="photo-progress-copy">{Math.round(progress * 100) < 100 ? `Reconociendo texto… ${Math.round(progress * 100)}%` : 'Terminando…'}</p>
+          <div className="photo-progress" aria-hidden="true"><span style={{ width: `${progressPercent}%` }} /></div>
+          <p className="photo-progress-copy">{ocrLabel ? `${ocrLabel} · ${progressPercent}%` : progressPercent < 100 ? `Reconociendo texto… ${progressPercent}%` : 'Terminando…'}</p>
         </>
       )}
 
@@ -202,7 +263,7 @@ export default function PhotoView({ subjects, onClose, onCreateTasks }: PhotoVie
             className="photo-textarea"
             value={rawText}
             onChange={(event) => onTextEdited(event.target.value)}
-            aria-label="Texto reconocido de la foto"
+            aria-label="Texto reconocido de la foto o documento"
           />
           <p className="photo-line-count">Marca las líneas que quieres convertir en tareas ({selectedCount} seleccionadas).</p>
           <div className="photo-lines">

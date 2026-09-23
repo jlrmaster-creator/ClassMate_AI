@@ -630,7 +630,7 @@ function App({ userId, onLogout }: AppProps) {
           <button onClick={openNewTask}><ListChecks size={18} /> Escribir</button>
           <button onClick={startVoiceInput} aria-label="Crear tarea por voz"><span>◌</span> {voiceListening ? 'Escuchando…' : 'Hablar'}</button>
           <button onClick={() => setShowPhoto(true)}><BookOpen size={18} /> Foto</button>
-          <button disabled><FolderKanban size={18} /> Documento</button>
+          <button onClick={() => setShowPhoto(true)}><FolderKanban size={18} /> Documento</button>
         </div>
         {voiceError && <p className="voice-error" role="alert">{voiceError}</p>}
         </>}
