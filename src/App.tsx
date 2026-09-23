@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   ArrowRight,
   Timer,
   BookOpen,
@@ -33,6 +34,7 @@ import { subscribeToProjects, createCloudProject, updateCloudProject, deleteClou
 import { subscribeToTimetable, createCloudTimetableSlot, updateCloudTimetableSlot, deleteCloudTimetableSlot } from './services/timetableService'
 import { subscribeToProfile, updateCloudProfile, ensureCloudProfile, awardCloudPoints } from './services/profileService'
 import { getRewardSummary, pointsForTask } from './services/rewardService'
+import { calibratedMinutes, recordActualMinutes } from './services/calibrationService'
 import { buyItem, useItem, type StoreItem } from './services/storeService'
 import { generateStudySessions } from './services/examService'
 import type { Project } from './types/project'
@@ -66,6 +68,14 @@ function formatDuration(minutes: number): string {
 /** Clave de día local (YYYY-MM-DD) para calcular la racha sin errores de zona horaria. */
 function dayKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** Días naturales que faltan (o pasaron, si es negativo) hasta una fecha ISO YYYY-MM-DD. */
+function daysUntil(dateIso: string): number {
+  const target = new Date(`${dateIso}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 /** Días consecutivos (hasta hoy, o hasta ayer si hoy aún no hay actividad) con tareas completadas. */
@@ -124,6 +134,10 @@ function App({ userId, onLogout }: AppProps) {
   const [voiceListening, setVoiceListening] = useState(false)
   const [voiceError, setVoiceError] = useState('')
   const [showPhoto, setShowPhoto] = useState(false)
+  const [taskGroupView, setTaskGroupView] = useState<'list' | 'subject'>('list')
+  const [reminderDismissedDate, setReminderDismissedDate] = useState(() => localStorage.getItem('classmate-dismiss-reminders') ?? '')
+  const [timePromptTask, setTimePromptTask] = useState<Task | null>(null)
+  const remindersNotifiedRef = useRef(false)
 
   useEffect(() => subscribeToTasks(userId, setTasks) ?? undefined, [userId])
   useEffect(() => subscribeToProjects(userId, setProjects) ?? undefined, [userId])
@@ -144,7 +158,7 @@ function App({ userId, onLogout }: AppProps) {
   const completedCount = tasks.length - pendingTasks.length
   const totalMinutes = pendingTasks.reduce((total, task) => total + task.estimatedMinutes, 0)
   const recommendedTasks = pendingTasks
-    .filter((task) => task.estimatedMinutes <= (selectedMinutes ?? Number.MAX_SAFE_INTEGER))
+    .filter((task) => calibratedMinutes(task.subject, task.estimatedMinutes) <= (selectedMinutes ?? Number.MAX_SAFE_INTEGER))
     .sort((first, second) => taskScore(second) - taskScore(first))
 
   const activeStreak = computeStreak(tasks)
@@ -156,6 +170,52 @@ function App({ userId, onLogout }: AppProps) {
   const weekTasks = tasks.filter((task) => task.status === 'completed' && task.completedAt && new Date(task.completedAt) >= weekStart)
   const weekMinutes = weekTasks.reduce((total, task) => total + task.estimatedMinutes, 0)
   const focusTask = recommendedTasks[0] ?? null
+
+  // ---- Recordatorios (9): atrasadas, de mañana y examenes proximos ----
+  const todayKey = dayKey(new Date())
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowKey = dayKey(tomorrow)
+  const weekAhead = new Date()
+  weekAhead.setDate(weekAhead.getDate() + 6)
+  const weekAheadKey = dayKey(weekAhead)
+  const overdueTasks = pendingTasks.filter((task) => task.dueDate && task.dueDate < todayKey)
+  const dueTomorrowTasks = pendingTasks.filter((task) => task.dueDate === tomorrowKey)
+  const examsSoon = pendingTasks.filter((task) => task.type === 'exam' && task.dueDate && task.dueDate >= todayKey && task.dueDate <= weekAheadKey)
+  const reminderLines: string[] = []
+  if (overdueTasks.length > 0) reminderLines.push(`${overdueTasks.length} tarea${overdueTasks.length === 1 ? '' : 's'} atrasada${overdueTasks.length === 1 ? '' : 's'} por hacer`)
+  dueTomorrowTasks.slice(0, 2).forEach((task) => reminderLines.push(`Manana: ${task.title} (${task.subject})`))
+  if (dueTomorrowTasks.length > 2) reminderLines.push(`Y ${dueTomorrowTasks.length - 2} mas manana`)
+  examsSoon.slice(0, 1).forEach((exam) => reminderLines.push(`Examen: ${exam.title} el ${new Date(`${exam.dueDate}T00:00:00`).toLocaleDateString('es-ES', { weekday: 'long' })}`))
+
+  // ---- Sobrecarga (6): carga de hoy con minutos calibrados vs tiempo planificado ----
+  const dueTodayTasks = pendingTasks.filter((task) => task.dueDate === todayKey)
+  const loadToday = [...overdueTasks, ...dueTodayTasks].reduce((total, task) => total + calibratedMinutes(task.subject, task.estimatedMinutes), 0)
+  const availableMinutes = selectedMinutes ?? 120
+  const overloaded = loadToday > availableMinutes
+
+  // ---- Repaso inteligente (5): atrasadas → de hoy → sesiones de estudio → resto ----
+  const sessionTasks = pendingTasks.filter((task) => task.parentExamId)
+  const upcomingExams = pendingTasks
+    .filter((task) => task.type === 'exam' && task.dueDate && task.dueDate >= todayKey)
+    .sort((first, second) => (first.dueDate ?? '').localeCompare(second.dueDate ?? ''))
+  const nearestExam = upcomingExams[0] ?? null
+  const repasoTasks = [...pendingTasks].sort((first, second) => {
+    const group = (task: Task): number => {
+      if (task.dueDate && task.dueDate < todayKey) return 0
+      if (task.dueDate === todayKey) return 1
+      if (task.parentExamId) return 2
+      return 3
+    }
+    const diff = group(first) - group(second)
+    if (diff !== 0) return diff
+    return taskScore(second) - taskScore(first)
+  })
+  const repasoHint = nearestExam
+    ? `${nearestExam.subject}: ${nearestExam.title} en ${daysUntil(nearestExam.dueDate ?? '')} dia${daysUntil(nearestExam.dueDate ?? '') === 1 ? '' : 's'}`
+    : overdueTasks.length > 0
+      ? 'Empieza por las tareas atrasadas y las de hoy.'
+      : 'Tus pendientes, ordenados por urgencia.'
 
   const taskSubjects = Array.from(new Set(tasks.map((task) => task.subject))).sort()
   const filteredTasks = tasks
@@ -171,6 +231,18 @@ function App({ userId, onLogout }: AppProps) {
       if (taskSort === 'title') return first.title.localeCompare(second.title)
       return taskScore(second) - taskScore(first)
     })
+  const subjectGroups = taskSubjects
+    .map((subject) => ({ subject, items: filteredTasks.filter((task) => task.subject === subject) }))
+    .filter((group) => group.items.length > 0)
+
+  // Una sola notificacion web al cargar, si hay pendientes y ya hay permiso concedido
+  useEffect(() => {
+    if (remindersNotifiedRef.current || reminderLines.length === 0) return
+    if (reminderDismissedDate === todayKey) return
+    if (!('Notification' in window) || Notification.permission !== 'granted') return
+    remindersNotifiedRef.current = true
+    new Notification('ClassMate AI', { body: reminderLines.slice(0, 2).join(' · ') })
+  }, [reminderLines.length, reminderDismissedDate, todayKey])
 
   function taskScore(task: Task): number {
     const priorityScore = { high: 30, medium: 20, low: 10 }[task.priority]
@@ -252,7 +324,18 @@ function App({ userId, onLogout }: AppProps) {
       // desfasada y garantiza que la tienda reciba el saldo actualizado vía onSnapshot.
       awardCloudPoints(userId, points)
       setProfile((current) => ({ ...current, totalPoints: (current.totalPoints || 0) + points }))
+      // Punto 7: ofrece registrar el tiempo real para calibrar las estimaciones futuras
+      setTimePromptTask(nextTask)
+    } else {
+      setTimePromptTask((current) => (current && current.id === taskId ? null : current))
     }
+  }
+
+  function recordRealTime(minutes: number) {
+    if (timePromptTask) {
+      recordActualMinutes(timePromptTask.subject, timePromptTask.estimatedMinutes, minutes)
+    }
+    setTimePromptTask(null)
   }
 
   function saveTask(event: React.FormEvent<HTMLFormElement>) {
@@ -552,6 +635,14 @@ function App({ userId, onLogout }: AppProps) {
           <span className="week-stat"><strong>{rewardSummary.weeklyPoints} pts</strong><small>esta semana</small></span>
         </section>
 
+        {reminderLines.length > 0 && reminderDismissedDate !== todayKey && (
+          <section className="reminders-banner" role="status">
+            <span className="reminders-icon" aria-hidden="true">🔔</span>
+            <div className="reminders-lines">{reminderLines.map((line, index) => <p key={index}>{line}</p>)}</div>
+            <button className="reminders-dismiss" onClick={() => { setReminderDismissedDate(todayKey); localStorage.setItem('classmate-dismiss-reminders', todayKey) }} aria-label="Ocultar recordatorios"><X size={15} /></button>
+          </section>
+        )}
+
         <section className="focus-banner">
           <div className="focus-icon"><Sparkles size={22} /></div>
           <div>
@@ -590,28 +681,58 @@ function App({ userId, onLogout }: AppProps) {
               <option value="title">Por nombre</option>
             </select>
           </div>
+          <div className="task-view-toggle" role="group" aria-label="Vista de tareas">
+            <button type="button" className={taskGroupView === 'list' ? 'active' : ''} onClick={() => setTaskGroupView('list')}>Lista</button>
+            <button type="button" className={taskGroupView === 'subject' ? 'active' : ''} onClick={() => setTaskGroupView('subject')}>Por asignatura</button>
+          </div>
           <section className="quick-add">
             <div><span className="section-kicker">Añade sin complicarte</span><h2>¿Qué tienes que hacer?</h2></div>
             <button className="add-task-button" onClick={openNewTask} aria-label="Anadir tarea"><Plus size={22} /></button>
           </section>
-          <div className="task-list">
-            {filteredTasks.map((task) => renderTask(task, true))}
-            {filteredTasks.length === 0 && <div className="empty-state"><span><ListChecks size={24} /></span><h3>{tasks.length === 0 ? 'No tienes tareas' : 'Nada coincide'}</h3><p>{tasks.length === 0 ? 'Añade una para empezar a organizarte.' : 'Prueba a cambiar el filtro o la búsqueda.'}</p></div>}
-          </div>
+          {filteredTasks.length === 0 && <div className="empty-state"><span><ListChecks size={24} /></span><h3>{tasks.length === 0 ? 'No tienes tareas' : 'Nada coincide'}</h3><p>{tasks.length === 0 ? 'Añade una para empezar a organizarte.' : 'Prueba a cambiar el filtro o la búsqueda.'}</p></div>}
+          {taskGroupView === 'list' && filteredTasks.length > 0 && (
+            <div className="task-list">
+              {filteredTasks.map((task) => renderTask(task, true))}
+            </div>
+          )}
+          {taskGroupView === 'subject' && (
+            <div className="subject-groups">
+              {subjectGroups.map((group) => (
+                <section className="subject-group" key={group.subject}>
+                  <div className="subject-group-head">
+                    <h3>{group.subject}</h3>
+                    <span>{group.items.length} {group.items.length === 1 ? 'tarea' : 'tareas'} · {formatDuration(group.items.reduce((total, t) => total + t.estimatedMinutes, 0))}</span>
+                  </div>
+                  <div className="task-list">{group.items.map((task) => renderTask(task, true))}</div>
+                </section>
+              ))}
+            </div>
+          )}
           {tasks.length > 0 && <p className="tasks-retention"><Check size={15} /> Las tareas completadas seguirán aquí hasta que las elimines.</p>}
 
           <ProjectsView userId={userId} projects={projects} onSave={saveProject} onDelete={deleteProject} onJoin={(code) => joinProjectByCode(userId, code)} />
         </section> : <>
+        {overloaded && (
+          <section className="overload-banner" role="alert">
+            <AlertTriangle size={18} className="overload-icon" />
+            <div>
+              <strong>Hoy acumulas ~{formatDuration(loadToday)} y planificaste {formatDuration(availableMinutes)}</strong>
+              <p>Demasiada carga para una jornada: prioriza lo urgente, reparte tareas a otros días o pide ayuda a un compañero.</p>
+            </div>
+          </section>
+        )}
+
         <section className="section-heading">
           <div>
             <p className="section-kicker">Plan de hoy</p>
             <h2>{pendingTasks.length ? 'Lo que toca ahora' : 'Todo hecho por hoy'}</h2>
+            <p className="repaso-hint">{pendingTasks.length > 0 && repasoHint}</p>
           </div>
           <span className="time-total"><Clock3 size={15} /> {totalMinutes} min</span>
         </section>
 
         <div className="task-list">
-          {pendingTasks.map((task) => renderTask(task, true))}
+          {repasoTasks.map((task) => renderTask(task, true))}
           {completedCount > 0 && <p className="completed-note"><Check size={15} /> {completedCount} tarea{completedCount === 1 ? '' : 's'} completada{completedCount === 1 ? '' : 's'}</p>}
           {pendingTasks.length === 0 && <div className="empty-state"><span><Check size={24} /></span><h3>Estas al dia</h3><p>Parece que no tienes tareas pendientes.</p></div>}
         </div>
@@ -722,6 +843,19 @@ function App({ userId, onLogout }: AppProps) {
       {showPhoto && <div className="modal-backdrop" onClick={() => setShowPhoto(false)}>
         <PhotoView subjects={taskSubjects} onClose={() => setShowPhoto(false)} onCreateTasks={createTasksFromPhoto} />
       </div>}
+
+      {timePromptTask && (
+        <div className="time-prompt" role="status">
+          <div className="time-prompt-text">
+            <strong>¿Cuánto te llevó en realidad?</strong>
+            <span>«{timePromptTask.title}» · {timePromptTask.subject} · estimado {timePromptTask.estimatedMinutes} min</span>
+          </div>
+          <div className="time-prompt-chips">
+            {[15, 30, 45, 60, 90].map((minutes) => <button type="button" key={minutes} onClick={() => recordRealTime(minutes)}>{minutes} min</button>)}
+            <button type="button" className="time-prompt-skip" onClick={() => setTimePromptTask(null)}>Saltar</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
