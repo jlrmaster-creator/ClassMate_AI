@@ -614,7 +614,7 @@ function App({ userId, onLogout }: AppProps) {
       </header>
 
       <main className="content">
-        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} onBuy={buyStoreItem} onUse={applyStoreItem} /> : activeTab === 'Horario' ? <TimetableView slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
+        {activeTab === 'Perfil' ? <ProfileView profile={profile} tasks={tasks} onSave={updateProfile} onBuy={buyStoreItem} onUse={applyStoreItem} /> : activeTab === 'Horario' ? <TimetableView userId={userId} slots={timetable} onSaveSlot={saveTimetableSlot} onDeleteSlot={deleteTimetableSlot} onCreateTaskForSubject={openTaskForSubject} /> : activeTab === 'Estudio' ? <StudyRoomView userId={userId} userNick={profile.nick || 'Estudiante'} pomodoroRunning={pomodoroRunning} pomodoroSubject={pomodoroSubject} /> : activeTab === 'Calendario' ? <CalendarView tasks={tasks} schoolDays={schoolDays} onSchoolDaysChange={updateSchoolDays} onCreateTask={openTaskForDate} /> : <>
         <section className="welcome-row">
           <div>
             <p className="eyebrow">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p>

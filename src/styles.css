@@ -265,3 +265,32 @@ h2 { margin: 5px 0 0; font-family: 'Fraunces', serif; font-size: 23px; letter-sp
 .store-error { margin: 12px 0 0; color: var(--accent-deep); font-size: 12px; }
 .profile-avatar.emoji { font-size: 30px; line-height: 1; }
 .name-badge { font-style: normal; }
+
+/* ── Subtareas de proyectos ─────────────────────────────────────────────────── */
+.subtasks-toggle { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 14px; padding: 9px 12px; color: #718079; font-size: 12px; font-weight: 700; border: 1px solid #e1e9e1; border-radius: 11px; background: #f7faf7; cursor: pointer; }
+.subtasks-toggle.open { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); }
+.subtasks-chevron { margin-left: auto; transition: transform .2s ease; }
+.subtasks-toggle.open .subtasks-chevron { transform: rotate(180deg); }
+.subtask-panel { margin-top: 12px; padding: 12px; border: 1px solid #e1e9e1; border-radius: 13px; background: #fbfcf9; }
+.subtask-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.subtask-count { color: #52605c; font-size: 12px; font-weight: 700; }
+.subtask-bar { flex: 1; max-width: 120px; height: 5px; overflow: hidden; border-radius: 99px; background: #e3eae3; }
+.subtask-bar span { display: block; height: 100%; border-radius: inherit; background: var(--brand); transition: width .25s ease; }
+.subtask-list { display: grid; gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
+.subtask-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 10px; background: #fff; border: 1px solid #e8ece8; }
+.subtask-item.done { opacity: .65; }
+.subtask-check { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; color: #fff; border: 1.5px solid #cfd9d1; border-radius: 7px; background: #fff; cursor: pointer; }
+.subtask-item.done .subtask-check { border-color: var(--brand); background: var(--brand); }
+.subtask-title { flex: 1; min-width: 0; color: var(--ink); font-size: 13px; cursor: pointer; }
+.subtask-item.done .subtask-title { text-decoration: line-through; color: #89958f; }
+.subtask-delete { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; color: #9ca9a1; border: 0; border-radius: 7px; background: transparent; cursor: pointer; }
+.subtask-delete:hover { color: var(--accent-deep); background: var(--accent-danger); }
+.subtask-add { display: flex; gap: 8px; }
+.subtask-add input { flex: 1; min-width: 0; padding: 10px 12px; color: var(--ink); font-size: 13px; border: 1px solid #dbe4dc; border-radius: 10px; outline: none; background: #fff; }
+.subtask-add input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-focus); }
+.subtask-add .add-task-button { flex: 0 0 auto; height: 38px; }
+
+/* ── Compartir horario ──────────────────────────────────────────────────────── */
+.share-result { display: grid; gap: 10px; margin-top: 14px; }
+.share-result-code { display: grid; place-items: center; padding: 16px; color: var(--brand); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 26px; font-weight: 700; letter-spacing: .22em; border: 2px dashed var(--brand-border); border-radius: 13px; background: var(--brand-soft); }
+.share-result .share-code-button { height: 38px; font-size: 12px; }

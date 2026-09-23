@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Plus, Clock3, Edit3, X, ArrowRight, ListChecks } from 'lucide-react'
+import { ArrowRight, Check, Copy, Clock3, Edit3, ListChecks, LogIn, Plus, Share2, X } from 'lucide-react'
 import type { TimetableSlot } from '../../types/timetable'
+import { fetchTimetableShare, publishTimetableShare } from '../../services/timetableService'
 
 interface TimetableViewProps {
+  userId: string
   slots: TimetableSlot[]
   onSaveSlot: (slot: TimetableSlot) => void
   onDeleteSlot: (slotId: string) => void
@@ -11,10 +13,19 @@ interface TimetableViewProps {
 
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
 
-export default function TimetableView({ slots, onSaveSlot, onDeleteSlot, onCreateTaskForSubject }: TimetableViewProps) {
+export default function TimetableView({ userId, slots, onSaveSlot, onDeleteSlot, onCreateTaskForSubject }: TimetableViewProps) {
   const [activeDay, setActiveDay] = useState(new Date().getDay() >= 1 && new Date().getDay() <= 5 ? new Date().getDay() - 1 : 0)
   const [showForm, setShowForm] = useState(false)
   const [editingSlot, setEditingSlot] = useState<TimetableSlot | null>(null)
+  const [showShare, setShowShare] = useState(false)
+  const [shareCode, setShareCode] = useState('')
+  const [sharing, setSharing] = useState(false)
+  const [shareError, setShareError] = useState('')
+  const [copiedCode, setCopiedCode] = useState('')
+  const [showJoin, setShowJoin] = useState(false)
+  const [joinCode, setJoinCode] = useState('')
+  const [joining, setJoining] = useState(false)
+  const [joinError, setJoinError] = useState('')
 
   const currentSlots = slots
     .filter((s) => s.dayOfWeek === activeDay)
@@ -52,6 +63,51 @@ export default function TimetableView({ slots, onSaveSlot, onDeleteSlot, onCreat
     setEditingSlot(null)
   }
 
+  function openShare() {
+    setShareCode('')
+    setShareError('')
+    setShowShare(true)
+  }
+
+  async function publishShare() {
+    if (sharing) return
+    if (slots.length === 0) {
+      setShareError('Primero añade alguna clase a tu horario.')
+      return
+    }
+    setSharing(true)
+    setShareError('')
+    const code = await publishTimetableShare(userId, slots)
+    setSharing(false)
+    if (code) setShareCode(code)
+    else setShareError('No se pudo guardar el horario. Inténtalo de nuevo.')
+  }
+
+  function copyCode() {
+    if (!shareCode) return
+    navigator.clipboard.writeText(shareCode).then(() => {
+      setCopiedCode(shareCode)
+      setTimeout(() => setCopiedCode(''), 2000)
+    })
+  }
+
+  async function joinShare(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const code = joinCode.trim().toUpperCase()
+    if (code.length !== 6 || joining) return
+    setJoining(true)
+    setJoinError('')
+    const imported = await fetchTimetableShare(code)
+    setJoining(false)
+    if (!imported || imported.length === 0) {
+      setJoinError('Código incorrecto o sin clases todavía.')
+      return
+    }
+    imported.forEach((slot) => onSaveSlot(slot))
+    setShowJoin(false)
+    setJoinCode('')
+  }
+
   return (
     <section className="timetable-view">
       <section className="section-heading">
@@ -59,9 +115,13 @@ export default function TimetableView({ slots, onSaveSlot, onDeleteSlot, onCreat
           <p className="section-kicker">Horario Escolar</p>
           <h2>Tus clases</h2>
         </div>
-        <button className="add-task-button" onClick={openNewSlot} aria-label="Añadir clase">
-          <Plus size={22} />
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="add-task-button" onClick={() => setShowJoin(true)} aria-label="Unirse a un horario compartido por código" title="Usar código de otro horario"><LogIn size={20} /></button>
+          <button className="add-task-button" onClick={openShare} aria-label="Compartir horario por código" title="Compartir horario"><Share2 size={20} /></button>
+          <button className="add-task-button" onClick={openNewSlot} aria-label="Añadir clase">
+            <Plus size={22} />
+          </button>
+        </div>
       </section>
 
       <div className="days-nav">
@@ -146,6 +206,63 @@ export default function TimetableView({ slots, onSaveSlot, onDeleteSlot, onCreat
 
             <button className="primary-button" type="submit">
               Guardar clase <ArrowRight size={17} />
+            </button>
+          </form>
+        </div>
+      )}
+    {showShare && (
+        <div className="modal-backdrop" onClick={() => setShowShare(false)}>
+          <div className="modal task-form" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="modal-close" onClick={() => setShowShare(false)}>
+              <X size={19} />
+            </button>
+            <p className="section-kicker">Compartir horario</p>
+            <h2>Un código para tu clase</h2>
+            <p className="muted-copy" style={{ marginTop: 0 }}>
+              Quien introduzca este código copiará tu horario en su app. Puedes compartirlo por chat.
+            </p>
+            {!shareCode && !shareError && (
+              <button className="primary-button" type="button" onClick={publishShare} disabled={sharing} style={{ marginTop: 8 }}>
+                {sharing ? 'Generando…' : 'Generar código'} <ArrowRight size={17} />
+              </button>
+            )}
+            {shareError && <p className="form-error">{shareError}</p>}
+            {shareCode && (
+              <div className="share-result">
+                <span className="share-result-code">{shareCode}</span>
+                <button className="share-code-button" onClick={copyCode} aria-label="Copiar código">
+                  {copiedCode === shareCode ? <Check size={15} /> : <Copy size={15} />}
+                  {copiedCode === shareCode ? '¡Copiado!' : 'Copiar'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showJoin && (
+        <div className="modal-backdrop" onClick={() => setShowJoin(false)}>
+          <form className="modal task-form" onSubmit={joinShare} onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="modal-close" onClick={() => setShowJoin(false)}>
+              <X size={19} />
+            </button>
+            <p className="section-kicker">Unirse a un horario</p>
+            <h2>Introduce el código</h2>
+            <label>
+              Código de 6 caracteres
+              <input
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                placeholder="Ej. ABC123"
+                maxLength={6}
+                autoFocus
+                required
+                className="code-input"
+              />
+            </label>
+            {joinError && <p className="form-error">{joinError}</p>}
+            <button className="primary-button" type="submit" disabled={joining}>
+              {joining ? 'Importando…' : 'Importar horario'} <ArrowRight size={17} />
             </button>
           </form>
         </div>

@@ -183,5 +183,17 @@ service cloud.firestore {
         && request.resource.data.projectId is string
         && exists(/databases/$(database)/documents/users/$(request.auth.uid)/projects/$(request.resource.data.projectId));
     }
+
+    match /timetableShares/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.slots is list
+        && request.resource.data.slots.size() > 0
+        && request.resource.data.slots.size() <= 60
+        && validTimestamp(request.resource.data.createdAt)
+        && validTimestamp(request.resource.data.updatedAt);
+      allow update, delete: if false;
+    }
   }
 }

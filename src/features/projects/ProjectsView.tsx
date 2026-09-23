@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { ArrowRight, CalendarDays, Check, Copy, Edit3, FolderKanban, LogIn, Plus, Share2, Trash2, Users, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, Check, ChevronDown, Copy, Edit3, FolderKanban, ListChecks, LogIn, Plus, Share2, Trash2, Users, X } from 'lucide-react'
 import type { Project } from '../../types/project'
+import SubtasksPanel from './SubtasksPanel'
 
 interface ProjectsViewProps {
   userId: string
@@ -28,6 +29,7 @@ export default function ProjectsView({ userId, projects, onSave, onDelete, onJoi
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [copiedCode, setCopiedCode] = useState('')
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
 
   function openNewProject() {
     setEditingProject({ ...emptyProject, id: '', createdAt: '', updatedAt: '' })
@@ -107,6 +109,10 @@ export default function ProjectsView({ userId, projects, onSave, onDelete, onJoi
               {project.description && <p>{project.description}</p>}
               <div className="project-meta">{project.dueDate && <span><CalendarDays size={14} /> {new Date(`${project.dueDate}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span>}<span><Users size={14} /> {groupSize} en el grupo</span>{groupSize > 1 && !isOwner && <span className="shared-tag">Compartido</span>}</div>
               <div className="progress-row"><span>Progreso</span><strong>{project.progress}%</strong></div><div className="progress-track"><span style={{ width: `${project.progress}%` }} /></div>
+              <button type="button" className={`subtasks-toggle ${expandedProjectId === project.id ? 'open' : ''}`} onClick={() => setExpandedProjectId(expandedProjectId === project.id ? null : project.id)} aria-expanded={expandedProjectId === project.id}>
+                <ListChecks size={15} /> Pasos <ChevronDown size={15} className="subtasks-chevron" />
+              </button>
+              {expandedProjectId === project.id && <SubtasksPanel ownerId={project.ownerId || userId} projectId={project.id} userId={userId} />}
             </article>
           )
         })}
