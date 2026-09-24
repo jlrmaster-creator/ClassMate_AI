@@ -1,6 +1,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   onSnapshot,
@@ -33,6 +34,19 @@ function taskFromDocument(id: string, data: Record<string, unknown>): Task {
   }
 }
 
+// Firestore rechaza valores `undefined` con "Unsupported field value: undefined"
+// (ignoreUndefinedProperties=false por defecto). El spread de un objeto Task puede
+// arrastrar campos undefined (completedAt, examTopics, parentExamId, dueDate...),
+// lo que hacía fallar el setDoc en silencio y el completado NUNCA se guardaba.
+function cleanTaskData(data: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue
+    clean[key] = value
+  }
+  return clean
+}
+
 
 export function subscribeToTasks(userId: string, onTasks: (tasks: Task[]) => void): Unsubscribe | null {
   const tasksCollection = userTasksCollection(userId)
@@ -51,7 +65,7 @@ export async function createCloudTask(userId: string, task: Task): Promise<strin
   // id distinto en Firestore: completar/edit recién creada fallaba en silencio (doc inexistente).
   const taskRef = doc(tasksCollection, id)
   await setDoc(taskRef, {
-    ...taskData,
+    ...cleanTaskData(taskData),
     userId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -62,10 +76,17 @@ export async function createCloudTask(userId: string, task: Task): Promise<strin
 export async function updateCloudTask(userId: string, task: Task): Promise<void> {
   if (!db) return
   const { id, ...taskData } = task
+  const payload = cleanTaskData(taskData)
+  // Al descompletar, completedAt es undefined: el SDK rechaza valores undefined y, si solo lo
+  // omitiéramos, el timestamp viejo quedaría guardado. deleteField() lo borra del documento.
+  if (taskData.completedAt === undefined) {
+    payload.completedAt = deleteField()
+  }
   const taskRef = doc(db, 'users', userId, 'tasks', id)
   try {
+    console.log('[tasks] updateCloudTask:', id, { ...payload, updatedAt: 'serverTimestamp()' })
     await setDoc(taskRef, {
-      ...taskData,
+      ...payload,
       userId,
       updatedAt: serverTimestamp(),
     }, { merge: true })
@@ -77,7 +98,7 @@ export async function updateCloudTask(userId: string, task: Task): Promise<void>
     const existing = await getDoc(taskRef)
     if (!existing.exists()) {
       await setDoc(taskRef, {
-        ...taskData,
+        ...cleanTaskData(taskData),
         userId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
